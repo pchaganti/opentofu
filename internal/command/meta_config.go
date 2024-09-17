@@ -93,7 +93,7 @@ func (m *Meta) loadConfigWithTests(rootDir, testDir string) (*configs.Config, tf
 // initialization use-cases where the root module must be inspected in order
 // to determine what else needs to be installed before the full configuration
 // can be used.
-func (m *Meta) loadSingleModule(dir string) (*configs.Module, tfdiags.Diagnostics) {
+func (m *Meta) loadSingleModule(dir string, load configs.SelectiveLoader) (*configs.Module, tfdiags.Diagnostics) {
 	var diags tfdiags.Diagnostics
 	dir = m.normalizePath(dir)
 
@@ -109,7 +109,7 @@ func (m *Meta) loadSingleModule(dir string) (*configs.Module, tfdiags.Diagnostic
 		return nil, diags
 	}
 
-	module, hclDiags := loader.Parser().LoadConfigDir(dir, call)
+	module, hclDiags := loader.Parser().LoadConfigDirSelective(dir, call, load)
 	diags = diags.Append(hclDiags)
 	return module, diags
 }
@@ -177,7 +177,7 @@ func (m *Meta) loadSingleModuleWithTests(dir string, testDir string) (*configs.M
 // least one OpenTofu configuration file (.tf or .tf.json), returning true
 // if so.
 //
-// In the unlikely event that the underlying config loader cannot be initalized,
+// In the unlikely event that the underlying config loader cannot be initialized,
 // this function optimistically returns true, assuming that the caller will
 // then do some other operation that requires the config loader and get an
 // error at that point.
@@ -205,7 +205,7 @@ func (m *Meta) dirIsConfigPath(dir string) bool {
 // that a call to loadSingleModule or loadConfig could fail on the same
 // directory even if loadBackendConfig succeeded.)
 func (m *Meta) loadBackendConfig(rootDir string) (*configs.Backend, tfdiags.Diagnostics) {
-	mod, diags := m.loadSingleModule(rootDir)
+	mod, diags := m.loadSingleModule(rootDir, configs.SelectiveLoadBackend)
 
 	// Only return error diagnostics at this point. Any warnings will be caught
 	// again later and duplicated in the output.
@@ -380,7 +380,7 @@ func (m *Meta) inputForSchema(given cty.Value, schema *configschema.Block) (cty.
 //
 // If a config loader has not yet been instantiated then no files could have
 // been loaded already, so this method returns a nil map in that case.
-func (m *Meta) configSources() map[string][]byte {
+func (m *Meta) configSources() map[string]*hcl.File {
 	if m.configLoader == nil {
 		return nil
 	}

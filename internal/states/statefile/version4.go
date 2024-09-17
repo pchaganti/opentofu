@@ -300,7 +300,7 @@ func prepareStateV4(sV4 *stateV4) (*File, tfdiags.Diagnostics) {
 	}
 
 	// Saved check results from the previous run, if any.
-	// We differentiate absense from an empty array here so that we can
+	// We differentiate absence from an empty array here so that we can
 	// recognize if the previous run was with a version of OpenTofu that
 	// didn't support checks yet, or if there just weren't any checkable
 	// objects to record, in case that's important for certain messaging.
@@ -347,7 +347,7 @@ func writeStateV4(file *File, w io.Writer, enc encryption.StateEncryption) tfdia
 			diags = diags.Append(tfdiags.Sourceless(
 				tfdiags.Error,
 				"Failed to serialize output value in state",
-				fmt.Sprintf("An error occured while serializing output value %q: %s.", name, err),
+				fmt.Sprintf("An error occurred while serializing output value %q: %s.", name, err),
 			))
 			continue
 		}
@@ -357,7 +357,7 @@ func writeStateV4(file *File, w io.Writer, enc encryption.StateEncryption) tfdia
 			diags = diags.Append(tfdiags.Sourceless(
 				tfdiags.Error,
 				"Failed to serialize output value in state",
-				fmt.Sprintf("An error occured while serializing the type of output value %q: %s.", name, err),
+				fmt.Sprintf("An error occurred while serializing the type of output value %q: %s.", name, err),
 			))
 			continue
 		}
@@ -430,7 +430,7 @@ func writeStateV4(file *File, w io.Writer, enc encryption.StateEncryption) tfdia
 		diags = diags.Append(tfdiags.Sourceless(
 			tfdiags.Error,
 			"Failed to serialize state",
-			fmt.Sprintf("An error occured while serializing the state to save it. This is a bug in OpenTofu and should be reported: %s.", err),
+			fmt.Sprintf("An error occurred while serializing the state to save it. This is a bug in OpenTofu and should be reported: %s.", err),
 		))
 		return diags
 	}
@@ -444,7 +444,7 @@ func writeStateV4(file *File, w io.Writer, enc encryption.StateEncryption) tfdia
 		diags = diags.Append(tfdiags.Sourceless(
 			tfdiags.Error,
 			"Failed to write state",
-			fmt.Sprintf("An error occured while writing the serialized state: %s.", err),
+			fmt.Sprintf("An error occurred while writing the serialized state: %s.", err),
 		))
 		return diags
 	}

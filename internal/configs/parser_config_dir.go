@@ -52,6 +52,9 @@ const (
 // .tf files are parsed using the HCL native syntax while .tf.json files are
 // parsed using the HCL JSON syntax.
 func (p *Parser) LoadConfigDir(path string, call StaticModuleCall) (*Module, hcl.Diagnostics) {
+	return p.LoadConfigDirSelective(path, call, SelectiveLoadAll)
+}
+func (p *Parser) LoadConfigDirSelective(path string, call StaticModuleCall, load SelectiveLoader) (*Module, hcl.Diagnostics) {
 	primaryPaths, overridePaths, _, diags := p.dirFiles(path, "")
 	if diags.HasErrors() {
 		return nil, diags
@@ -62,7 +65,7 @@ func (p *Parser) LoadConfigDir(path string, call StaticModuleCall) (*Module, hcl
 	override, fDiags := p.loadFiles(overridePaths, true)
 	diags = append(diags, fDiags...)
 
-	mod, modDiags := NewModule(primary, override, call, path)
+	mod, modDiags := NewModule(primary, override, call, path, load)
 	diags = append(diags, modDiags...)
 
 	return mod, diags
@@ -107,7 +110,7 @@ func (p Parser) ConfigDirFilesWithTests(dir string, testDirectory string) (prima
 
 // IsConfigDir determines whether the given path refers to a directory that
 // exists and contains at least one OpenTofu config file (with a .tf or
-// .tf.json extension.). Note, we explicitely exclude checking for tests here
+// .tf.json extension.). Note, we explicitly exclude checking for tests here
 // as tests must live alongside actual .tf config files.
 func (p *Parser) IsConfigDir(path string) bool {
 	primaryPaths, overridePaths, _, _ := p.dirFiles(path, "")

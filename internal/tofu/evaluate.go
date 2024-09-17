@@ -742,8 +742,8 @@ func (d *evaluationStateData) GetResource(addr addrs.Resource, rng tfdiags.Sourc
 	// Decode all instances in the current state
 	instances := map[addrs.InstanceKey]cty.Value{}
 	pendingDestroy := d.Operation == walkDestroy
-	for key, is := range rs.Instances {
-		if is == nil || is.Current == nil {
+	for key, instance := range rs.Instances {
+		if instance == nil || instance.Current == nil {
 			// Assume we're dealing with an instance that hasn't been created yet.
 			instances[key] = cty.UnknownVal(ty)
 			continue
@@ -766,7 +766,7 @@ func (d *evaluationStateData) GetResource(addr addrs.Resource, rng tfdiags.Sourc
 
 		// Planned resources are temporarily stored in state with empty values,
 		// and need to be replaced by the planned value here.
-		if is.Current.Status == states.ObjectPlanned {
+		if instance.Current.Status == states.ObjectPlanned {
 			if change == nil {
 				// If the object is in planned status then we should not get
 				// here, since we should have found a pending value in the plan
@@ -790,17 +790,20 @@ func (d *evaluationStateData) GetResource(addr addrs.Resource, rng tfdiags.Sourc
 				continue
 			}
 
-			// If our provider schema contains sensitive values, mark those as sensitive
 			afterMarks := change.AfterValMarks
 			if schema.ContainsSensitive() {
-				afterMarks = append(afterMarks, schema.ValueMarks(val, nil)...)
+				// Now that we know that the schema contains sensitive marks,
+				// Combine those marks together to ensure that the value is marked correctly but not double marked
+				schemaMarks := schema.ValueMarks(val, nil)
+				afterMarks = combinePathValueMarks(afterMarks, schemaMarks)
 			}
 
 			instances[key] = val.MarkWithPaths(afterMarks)
+
 			continue
 		}
 
-		ios, err := is.Current.Decode(ty)
+		instanceObjectSrc, err := instance.Current.Decode(ty)
 		if err != nil {
 			// This shouldn't happen, since by the time we get here we
 			// should have upgraded the state data already.
@@ -813,17 +816,17 @@ func (d *evaluationStateData) GetResource(addr addrs.Resource, rng tfdiags.Sourc
 			continue
 		}
 
-		val := ios.Value
+		val := instanceObjectSrc.Value
 
-		// If our schema contains sensitive values, mark those as sensitive.
-		// Since decoding the instance object can also apply sensitivity marks,
-		// we must remove and combine those before remarking to avoid a double-
-		// mark error.
 		if schema.ContainsSensitive() {
 			var marks []cty.PathValueMarks
+			// Now that we know that the schema contains sensitive marks,
+			// Combine those marks together to ensure that the value is marked correctly but not double marked
 			val, marks = val.UnmarkDeepWithPaths()
-			marks = append(marks, schema.ValueMarks(val, nil)...)
-			val = val.MarkWithPaths(marks)
+			schemaMarks := schema.ValueMarks(val, nil)
+
+			combined := combinePathValueMarks(marks, schemaMarks)
+			val = val.MarkWithPaths(combined)
 		}
 		instances[key] = val
 	}
@@ -905,7 +908,7 @@ func (d *evaluationStateData) GetResource(addr addrs.Resource, rng tfdiags.Sourc
 func (d *evaluationStateData) getResourceSchema(addr addrs.Resource, providerAddr addrs.Provider) *configschema.Block {
 	schema, _, err := d.Evaluator.Plugins.ResourceTypeSchema(providerAddr, addr.Mode, addr.Type)
 	if err != nil {
-		// We have plently other codepaths that will detect and report
+		// We have plenty of other codepaths that will detect and report
 		// schema lookup errors before we'd reach this point, so we'll just
 		// treat a failure here the same as having no schema.
 		return nil
@@ -916,7 +919,6 @@ func (d *evaluationStateData) getResourceSchema(addr addrs.Resource, providerAdd
 func (d *evaluationStateData) GetTerraformAttr(addr addrs.TerraformAttr, rng tfdiags.SourceRange) (cty.Value, tfdiags.Diagnostics) {
 	var diags tfdiags.Diagnostics
 	switch addr.Name {
-
 	case "workspace":
 		workspaceName := d.Evaluator.Meta.Env
 		return cty.StringVal(workspaceName), diags
@@ -927,8 +929,8 @@ func (d *evaluationStateData) GetTerraformAttr(addr addrs.TerraformAttr, rng tfd
 		// removed.
 		diags = diags.Append(&hcl.Diagnostic{
 			Severity: hcl.DiagError,
-			Summary:  `Invalid "terraform" attribute`,
-			Detail:   `The terraform.env attribute was deprecated in v0.10 and removed in v0.12. The "state environment" concept was renamed to "workspace" in v0.12, and so the workspace name can now be accessed using the terraform.workspace attribute.`,
+			Summary:  fmt.Sprintf("Invalid %q attribute", addr.Alias),
+			Detail:   fmt.Sprintf(`The %s.env attribute was deprecated in v0.10 and removed in v0.12. The "state environment" concept was renamed to "workspace" in v0.12, and so the workspace name can now be accessed using the %s.workspace attribute.`, addr.Alias, addr.Alias),
 			Subject:  rng.ToHCL().Ptr(),
 		})
 		return cty.DynamicVal, diags
@@ -936,8 +938,8 @@ func (d *evaluationStateData) GetTerraformAttr(addr addrs.TerraformAttr, rng tfd
 	default:
 		diags = diags.Append(&hcl.Diagnostic{
 			Severity: hcl.DiagError,
-			Summary:  `Invalid "terraform" attribute`,
-			Detail:   fmt.Sprintf(`The "terraform" object does not have an attribute named %q. The only supported attribute is terraform.workspace, the name of the currently-selected workspace.`, addr.Name),
+			Summary:  fmt.Sprintf("Invalid %q attribute", addr.Alias),
+			Detail:   fmt.Sprintf(`The %q object does not have an attribute named %q. The only supported attribute is %s.workspace, the name of the currently-selected workspace.`, addr.Alias, addr.Name, addr.Alias),
 			Subject:  rng.ToHCL().Ptr(),
 		})
 		return cty.DynamicVal, diags
@@ -1002,7 +1004,7 @@ func (d *evaluationStateData) GetCheckBlock(addr addrs.Check, rng tfdiags.Source
 	// For now, check blocks don't contain any meaningful data and can only
 	// be referenced from the testing scope within an expect_failures attribute.
 	//
-	// We've added them into the scope explicitly since they are referencable,
+	// We've added them into the scope explicitly since they are referenceable,
 	// but we'll actually just return an error message saying they can't be
 	// referenced in this context.
 	var diags tfdiags.Diagnostics

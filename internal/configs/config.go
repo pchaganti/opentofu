@@ -212,7 +212,7 @@ func (c *Config) EntersNewPackage() bool {
 
 // VerifyDependencySelections checks whether the given locked dependencies
 // are acceptable for all of the version constraints reported in the
-// configuration tree represented by the reciever.
+// configuration tree represented by the receiver.
 //
 // This function will errors only if any of the locked dependencies are out of
 // range for corresponding constraints in the configuration. If there are
@@ -926,8 +926,8 @@ func (c *Config) transformProviderConfigsForTest(run *TestRun, file *TestFile) (
 	//       doing this we ensure to preserve the name and alias from the
 	//       original config.
 	//   3b. If the run has no override configuration, we copy all the providers
-	//       from the test file into `next`, overriding all providers with name
-	//       collisions from the original config.
+	//       (including mocks) from the test file into `next`, overriding all providers
+	//       with name collisions from the original config.
 	//   4. We then modify the original configuration so that the providers it
 	//      holds are the combination specified by the original config, the test
 	//      file and the run file.
@@ -950,8 +950,7 @@ func (c *Config) transformProviderConfigsForTest(run *TestRun, file *TestFile) (
 		// for by this run block.
 
 		for _, ref := range run.Providers {
-
-			testProvider, ok := file.Providers[ref.InParent.String()]
+			testProvider, ok := file.getTestProviderOrMock(ref.InParent.String())
 			if !ok {
 				// Then this reference was invalid as we didn't have the
 				// specified provider in the parent. This should have been
@@ -966,13 +965,16 @@ func (c *Config) transformProviderConfigsForTest(run *TestRun, file *TestFile) (
 			}
 
 			next[ref.InChild.String()] = &Provider{
-				Name:       ref.InChild.Name,
-				NameRange:  ref.InChild.NameRange,
-				Alias:      ref.InChild.Alias,
-				AliasRange: ref.InChild.AliasRange,
-				Version:    testProvider.Version,
-				Config:     testProvider.Config,
-				DeclRange:  testProvider.DeclRange,
+				ProviderCommon: ProviderCommon{
+					Name:          ref.InChild.Name,
+					NameRange:     ref.InChild.NameRange,
+					Version:       testProvider.Version,
+					Config:        testProvider.Config,
+					DeclRange:     testProvider.DeclRange,
+					IsMocked:      testProvider.IsMocked,
+					MockResources: testProvider.MockResources,
+				},
+				Alias: ref.InChild.Alias,
 			}
 
 		}
@@ -981,6 +983,18 @@ func (c *Config) transformProviderConfigsForTest(run *TestRun, file *TestFile) (
 		// the test file itself.
 		for key, provider := range file.Providers {
 			next[key] = provider
+		}
+		for _, mp := range file.MockProviders {
+			next[mp.moduleUniqueKey()] = &Provider{
+				ProviderCommon: ProviderCommon{
+					Name:          mp.Name,
+					NameRange:     mp.NameRange,
+					DeclRange:     mp.DeclRange,
+					IsMocked:      true,
+					MockResources: mp.MockResources,
+				},
+				Alias: mp.Alias,
+			}
 		}
 	}
 

@@ -13,7 +13,6 @@ import (
 	"github.com/opentofu/opentofu/internal/addrs"
 	"github.com/opentofu/opentofu/internal/encryption/config"
 	"github.com/opentofu/opentofu/internal/experiments"
-
 	tfversion "github.com/opentofu/opentofu/version"
 )
 
@@ -69,6 +68,13 @@ type Module struct {
 	StaticEvaluator *StaticEvaluator
 }
 
+// GetProviderConfig uses name and alias to find the respective Provider configuration.
+func (m *Module) GetProviderConfig(name, alias string) (*Provider, bool) {
+	tp := &Provider{ProviderCommon: ProviderCommon{Name: name}, Alias: alias}
+	p, ok := m.ProviderConfigs[tp.Addr().StringCompact()]
+	return p, ok
+}
+
 // File describes the contents of a single configuration file.
 //
 // Individual files are not usually used alone, but rather combined together
@@ -87,7 +93,7 @@ type File struct {
 
 	Backends          []*Backend
 	CloudConfigs      []*CloudConfig
-	ProviderConfigs   []*Provider
+	ProviderConfigs   []*ProviderBlock
 	ProviderMetas     []*ProviderMeta
 	RequiredProviders []*RequiredProviders
 	Encryptions       []*config.EncryptionConfig
@@ -108,10 +114,44 @@ type File struct {
 	Checks []*Check
 }
 
+// SelectiveLoader allows the consumer to only load and validate the portions of files needed for the given operations/contexts
+type SelectiveLoader int
+
+const (
+	SelectiveLoadAll        SelectiveLoader = 0
+	SelectiveLoadBackend    SelectiveLoader = 1
+	SelectiveLoadEncryption SelectiveLoader = 2
+)
+
+// Apply the selective filter to the input files
+func (s SelectiveLoader) filter(input []*File) []*File {
+	if s == SelectiveLoadAll {
+		return input
+	}
+
+	out := make([]*File, len(input))
+	for i, inFile := range input {
+		outFile := &File{
+			Variables: inFile.Variables,
+			Locals:    inFile.Locals,
+		}
+
+		switch s { //nolint:exhaustive // SelectiveLoadAll handled above
+		case SelectiveLoadBackend:
+			outFile.Backends = inFile.Backends
+			outFile.CloudConfigs = inFile.CloudConfigs
+		case SelectiveLoadEncryption:
+			outFile.Encryptions = inFile.Encryptions
+		}
+		out[i] = outFile
+	}
+	return out
+}
+
 // NewModuleWithTests matches NewModule except it will also load in the provided
 // test files.
 func NewModuleWithTests(primaryFiles, overrideFiles []*File, testFiles map[string]*TestFile, call StaticModuleCall, sourceDir string) (*Module, hcl.Diagnostics) {
-	mod, diags := NewModule(primaryFiles, overrideFiles, call, sourceDir)
+	mod, diags := NewModule(primaryFiles, overrideFiles, call, sourceDir, SelectiveLoadAll)
 	if mod != nil {
 		mod.Tests = testFiles
 	}
@@ -126,7 +166,7 @@ func NewModuleWithTests(primaryFiles, overrideFiles []*File, testFiles map[strin
 // will be incomplete and error diagnostics will be returned. Careful static
 // analysis of the returned Module is still possible in this case, but the
 // module will probably not be semantically valid.
-func NewModule(primaryFiles, overrideFiles []*File, call StaticModuleCall, sourceDir string) (*Module, hcl.Diagnostics) {
+func NewModule(primaryFiles, overrideFiles []*File, call StaticModuleCall, sourceDir string, load SelectiveLoader) (*Module, hcl.Diagnostics) {
 	var diags hcl.Diagnostics
 	mod := &Module{
 		ProviderConfigs:    map[string]*Provider{},
@@ -142,6 +182,10 @@ func NewModule(primaryFiles, overrideFiles []*File, call StaticModuleCall, sourc
 		Tests:              map[string]*TestFile{},
 		SourceDir:          sourceDir,
 	}
+
+	// Apply selective load rules
+	primaryFiles = load.filter(primaryFiles)
+	overrideFiles = load.filter(overrideFiles)
 
 	// Process the required_providers blocks first, to ensure that all
 	// resources have access to the correct provider FQNs
@@ -198,6 +242,17 @@ func NewModule(primaryFiles, overrideFiles []*File, call StaticModuleCall, sourc
 	}
 	if mod.CloudConfig != nil {
 		mod.CloudConfig.eval = mod.StaticEvaluator
+	}
+
+	// Process all providers with the static context
+	for _, file := range primaryFiles {
+		fileDiags := mod.appendFileProviders(file)
+		diags = append(diags, fileDiags...)
+	}
+
+	for _, file := range overrideFiles {
+		fileDiags := mod.mergeFileProviders(file)
+		diags = append(diags, fileDiags...)
 	}
 
 	// Process all module calls now that we have the static context
@@ -271,29 +326,6 @@ func (m *Module) appendFile(file *File) hcl.Diagnostics {
 			Detail:   fmt.Sprintf("A module may declare either one 'cloud' block configuring a cloud backend OR one 'backend' block configuring a state backend. A cloud backend is configured at %s; a backend is configured at %s. Remove the backend block to configure a cloud backend.", m.CloudConfig.DeclRange, m.Backend.DeclRange),
 			Subject:  &m.Backend.DeclRange,
 		})
-	}
-
-	for _, pc := range file.ProviderConfigs {
-		key := pc.moduleUniqueKey()
-		if existing, exists := m.ProviderConfigs[key]; exists {
-			if existing.Alias == "" {
-				diags = append(diags, &hcl.Diagnostic{
-					Severity: hcl.DiagError,
-					Summary:  "Duplicate provider configuration",
-					Detail:   fmt.Sprintf("A default (non-aliased) provider configuration for %q was already given at %s. If multiple configurations are required, set the \"alias\" argument for alternative configurations.", existing.Name, existing.DeclRange),
-					Subject:  &pc.DeclRange,
-				})
-			} else {
-				diags = append(diags, &hcl.Diagnostic{
-					Severity: hcl.DiagError,
-					Summary:  "Duplicate provider configuration",
-					Detail:   fmt.Sprintf("A provider configuration for %q with alias %q was already given at %s. Each configuration for the same provider must have a distinct alias.", existing.Name, existing.Alias, existing.DeclRange),
-					Subject:  &pc.DeclRange,
-				})
-			}
-			continue
-		}
-		m.ProviderConfigs[key] = pc
 	}
 
 	for _, pm := range file.ProviderMetas {
@@ -546,38 +578,6 @@ func (m *Module) mergeFile(file *File) hcl.Diagnostics {
 		}
 	}
 
-	for _, pc := range file.ProviderConfigs {
-		key := pc.moduleUniqueKey()
-		existing, exists := m.ProviderConfigs[key]
-		if pc.Alias == "" {
-			// We allow overriding a non-existing _default_ provider configuration
-			// because the user model is that an absent provider configuration
-			// implies an empty provider configuration, which is what the user
-			// is therefore overriding here.
-			if exists {
-				mergeDiags := existing.merge(pc)
-				diags = append(diags, mergeDiags...)
-			} else {
-				m.ProviderConfigs[key] = pc
-			}
-		} else {
-			// For aliased providers, there must be a base configuration to
-			// override. This allows us to detect and report alias typos
-			// that might otherwise cause the override to not apply.
-			if !exists {
-				diags = append(diags, &hcl.Diagnostic{
-					Severity: hcl.DiagError,
-					Summary:  "Missing base provider configuration for override",
-					Detail:   fmt.Sprintf("There is no %s provider configuration with the alias %q. An override file can only override an aliased provider configuration that was already defined in a primary configuration file.", pc.Name, pc.Alias),
-					Subject:  &pc.DeclRange,
-				})
-				continue
-			}
-			mergeDiags := existing.merge(pc)
-			diags = append(diags, mergeDiags...)
-		}
-	}
-
 	if len(file.Encryptions) != 0 {
 		switch len(file.Encryptions) {
 		case 1:
@@ -713,6 +713,85 @@ func (m *Module) mergeFile(file *File) hcl.Diagnostics {
 		})
 	}
 
+	return diags
+}
+
+func (m *Module) appendFileProviders(file *File) hcl.Diagnostics {
+	var diags hcl.Diagnostics
+	for _, pci := range file.ProviderConfigs {
+		pcs, decodeDiags := pci.decodeStaticFields(m.StaticEvaluator)
+		diags = append(diags, decodeDiags...)
+		if decodeDiags.HasErrors() {
+			continue
+		}
+
+		for _, pc := range pcs {
+			key := pc.Addr().StringCompact()
+			if existing, exists := m.ProviderConfigs[key]; exists {
+				if existing.Alias == "" {
+					diags = append(diags, &hcl.Diagnostic{
+						Severity: hcl.DiagError,
+						Summary:  "Duplicate provider configuration",
+						Detail:   fmt.Sprintf("A default (non-aliased) provider configuration for %q was already given at %s. If multiple configurations are required, set the \"alias\" argument for alternative configurations.", existing.Name, existing.DeclRange),
+						Subject:  &pc.DeclRange,
+					})
+				} else {
+					diags = append(diags, &hcl.Diagnostic{
+						Severity: hcl.DiagError,
+						Summary:  "Duplicate provider configuration",
+						Detail:   fmt.Sprintf("A provider configuration for %q with alias %q was already given at %s. Each configuration for the same provider must have a distinct alias.", existing.Name, existing.Alias, existing.DeclRange),
+						Subject:  &pc.DeclRange,
+					})
+				}
+				continue
+			}
+			m.ProviderConfigs[key] = pc
+		}
+	}
+	return diags
+}
+
+func (m *Module) mergeFileProviders(file *File) hcl.Diagnostics {
+	var diags hcl.Diagnostics
+	for _, pci := range file.ProviderConfigs {
+		pcs, decodeDiags := pci.decodeStaticFields(m.StaticEvaluator)
+		diags = append(diags, decodeDiags...)
+		if decodeDiags.HasErrors() {
+			continue
+		}
+
+		for _, pc := range pcs {
+			key := pc.Addr().StringCompact()
+			existing, exists := m.ProviderConfigs[key]
+			if pc.Alias == "" {
+				// We allow overriding a non-existing _default_ provider configuration
+				// because the user model is that an absent provider configuration
+				// implies an empty provider configuration, which is what the user
+				// is therefore overriding here.
+				if exists {
+					mergeDiags := existing.merge(pc)
+					diags = append(diags, mergeDiags...)
+				} else {
+					m.ProviderConfigs[key] = pc
+				}
+			} else {
+				// For aliased providers, there must be a base configuration to
+				// override. This allows us to detect and report alias typos
+				// that might otherwise cause the override to not apply.
+				if !exists {
+					diags = append(diags, &hcl.Diagnostic{
+						Severity: hcl.DiagError,
+						Summary:  "Missing base provider configuration for override",
+						Detail:   fmt.Sprintf("There is no %s provider configuration with the alias %q. An override file can only override an aliased provider configuration that was already defined in a primary configuration file.", pc.Name, pc.Alias),
+						Subject:  &pc.DeclRange,
+					})
+					continue
+				}
+				mergeDiags := existing.merge(pc)
+				diags = append(diags, mergeDiags...)
+			}
+		}
+	}
 	return diags
 }
 

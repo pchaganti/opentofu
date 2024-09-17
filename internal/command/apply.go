@@ -49,6 +49,8 @@ func (c *ApplyCommand) Run(rawArgs []string) int {
 		args, diags = arguments.ParseApply(rawArgs)
 	}
 
+	c.View.SetShowSensitive(args.ShowSensitive)
+
 	// Instantiate the view, even if there are flag errors, so that we render
 	// diagnostics according to the desired view
 	view := views.NewApply(args.ViewType, c.Destroy, c.View)
@@ -298,7 +300,7 @@ func (c *ApplyCommand) OperationRequest(
 
 func (c *ApplyCommand) GatherVariables(args *arguments.Vars) {
 	// FIXME the arguments package currently trivially gathers variable related
-	// arguments in a heterogenous slice, in order to minimize the number of
+	// arguments in a heterogeneous slice, in order to minimize the number of
 	// code paths gathering variables during the transition to this structure.
 	// Once all commands that gather variables have been converted to this
 	// structure, we could move the variable gathering code to the arguments
@@ -377,6 +379,8 @@ Options:
   -state-out=path        Path to write state to that is different than
                          "-state". This can be used to preserve the old
                          state.
+
+  -show-sensitive        If specified, sensitive values will be displayed.
 
   If you don't provide a saved plan file then this command will also accept
   all of the plan-customization options accepted by the tofu plan command.

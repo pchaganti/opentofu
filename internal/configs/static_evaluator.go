@@ -14,7 +14,7 @@ import (
 	"github.com/zclconf/go-cty/cty"
 )
 
-// StaticIdentifier holds a Referencable item and where it was declared
+// StaticIdentifier holds a Referenceable item and where it was declared
 type StaticIdentifier struct {
 	Module    addrs.Module
 	Subject   string
@@ -45,6 +45,15 @@ func NewStaticModuleCall(addr addrs.Module, vars StaticModuleVariables, rootPath
 		vars:      vars,
 		rootPath:  rootPath,
 		workspace: workspace,
+	}
+}
+
+func (s StaticModuleCall) WithVariables(vars StaticModuleVariables) StaticModuleCall {
+	return StaticModuleCall{
+		addr:      s.addr,
+		vars:      vars,
+		rootPath:  s.rootPath,
+		workspace: s.workspace,
 	}
 }
 

@@ -36,6 +36,8 @@ func (c *PlanCommand) Run(rawArgs []string) int {
 	// Parse and validate flags
 	args, diags := arguments.ParsePlan(rawArgs)
 
+	c.View.SetShowSensitive(args.ShowSensitive)
+
 	// Instantiate the view, even if there are flag errors, so that we render
 	// diagnostics according to the desired view
 	view := views.NewPlan(args.ViewType, c.View)
@@ -180,7 +182,7 @@ func (c *PlanCommand) OperationRequest(
 
 func (c *PlanCommand) GatherVariables(args *arguments.Vars) {
 	// FIXME the arguments package currently trivially gathers variable related
-	// arguments in a heterogenous slice, in order to minimize the number of
+	// arguments in a heterogeneous slice, in order to minimize the number of
 	// code paths gathering variables during the transition to this structure.
 	// Once all commands that gather variables have been converted to this
 	// structure, we could move the variable gathering code to the arguments
@@ -288,6 +290,8 @@ Other Options:
   -state=statefile           A legacy option used for the local backend only.
                              See the local backend's documentation for more
                              information.
+
+  -show-sensitive            If specified, sensitive values will be displayed.
 `
 	return strings.TrimSpace(helpText)
 }
