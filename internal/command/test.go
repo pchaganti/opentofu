@@ -58,6 +58,18 @@ Usage: tofu [global options] test [options]
 
 Options:
 
+  -compact-warnings     If OpenTofu produces any warnings that are not
+                        accompanied by errors, show them in a more compact
+                        form that includes only the summary messages.
+
+  -consolidate-warnings If OpenTofu produces any warnings, no consolodation
+                        will be performed. All locations, for all warnings
+                        will be listed. Enabled by default.
+
+  -consolidate-errors   If OpenTofu produces any errors, no consolodation
+                        will be performed. All locations, for all errors
+                        will be listed. Disabled by default
+
   -filter=testfile      If specified, OpenTofu will only execute the test files
                         specified by this flag. You can use this option multiple
                         times to execute more than one test file.
@@ -125,7 +137,7 @@ func (c *TestCommand) Run(rawArgs []string) int {
 	}
 	c.variableArgs = rawFlags{items: &items}
 
-	variables, variableDiags := c.collectVariableValues()
+	variables, variableDiags := c.collectVariableValuesWithTests(args.TestDirectory)
 	diags = diags.Append(variableDiags)
 	if variableDiags.HasErrors() {
 		view.Diagnostics(nil, nil, diags)
@@ -272,7 +284,7 @@ func (c *TestCommand) Run(rawArgs []string) int {
 		defer stop()
 		defer cancel()
 
-		runner.Start(variables)
+		runner.Start()
 	}()
 
 	// Wait for the operation to complete, or for an interrupt to occur.
@@ -353,7 +365,7 @@ type TestSuiteRunner struct {
 	Verbose bool
 }
 
-func (runner *TestSuiteRunner) Start(globals map[string]backend.UnparsedVariableValue) {
+func (runner *TestSuiteRunner) Start() {
 	var files []string
 	for name := range runner.Suite.Files {
 		files = append(files, name)
@@ -518,8 +530,9 @@ func (runner *TestFileRunner) ExecuteTestRun(run *moduletest.Run, file *modulete
 
 	planCtx, plan, planDiags := runner.plan(config, state, run, file)
 	if run.Config.Command == configs.PlanTestCommand {
+		expectedFailures, sourceRanges := run.BuildExpectedFailuresAndSourceMaps()
 		// Then we want to assess our conditions and diagnostics differently.
-		planDiags = run.ValidateExpectedFailures(planDiags)
+		planDiags = run.ValidateExpectedFailures(expectedFailures, sourceRanges, planDiags)
 		run.Diagnostics = run.Diagnostics.Append(planDiags)
 		if planDiags.HasErrors() {
 			run.Status = moduletest.Error
@@ -564,6 +577,10 @@ func (runner *TestFileRunner) ExecuteTestRun(run *moduletest.Run, file *modulete
 		return state, false
 	}
 
+	expectedFailures, sourceRanges := run.BuildExpectedFailuresAndSourceMaps()
+
+	planDiags = checkProblematicPlanErrors(expectedFailures, planDiags)
+
 	// Otherwise any error during the planning prevents our apply from
 	// continuing which is an error.
 	run.Diagnostics = run.Diagnostics.Append(planDiags)
@@ -589,7 +606,7 @@ func (runner *TestFileRunner) ExecuteTestRun(run *moduletest.Run, file *modulete
 	applyCtx, updated, applyDiags := runner.apply(plan, state, config, run, file)
 
 	// Remove expected diagnostics, and add diagnostics in case anything that should have failed didn't.
-	applyDiags = run.ValidateExpectedFailures(applyDiags)
+	applyDiags = run.ValidateExpectedFailures(expectedFailures, sourceRanges, applyDiags)
 
 	run.Diagnostics = run.Diagnostics.Append(applyDiags)
 	if applyDiags.HasErrors() {
@@ -1253,4 +1270,27 @@ func (runner *TestFileRunner) prepareInputVariablesForAssertions(config *configs
 	return inputs, func() {
 		config.Module.Variables = currentVars
 	}, diags
+}
+
+// checkProblematicPlanErrors checks for plan errors that are also "expected" by the tests. In some cases we expect an error, however,
+// what causes the error might not be what we expected. So we try to warn about that here.
+func checkProblematicPlanErrors(expectedFailures addrs.Map[addrs.Referenceable, bool], planDiags tfdiags.Diagnostics) tfdiags.Diagnostics {
+	for _, diag := range planDiags {
+		rule, ok := addrs.DiagnosticOriginatesFromCheckRule(diag)
+		if !ok {
+			continue
+		}
+		if rule.Container.CheckableKind() != addrs.CheckableInputVariable {
+			continue
+		}
+
+		addr, ok := rule.Container.(addrs.AbsInputVariableInstance)
+		if ok && expectedFailures.Has(addr.Variable) {
+			planDiags = planDiags.Append(tfdiags.Sourceless(
+				tfdiags.Warning,
+				"Invalid Variable in test file",
+				fmt.Sprintf("Variable %s, has an invalid value within the test. Although this was an expected failure, it has meant the apply stage was unable to run so the overall test will fail.", rule.Container.String())))
+		}
+	}
+	return planDiags
 }
