@@ -7,6 +7,7 @@ package tofu
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
@@ -80,7 +81,7 @@ resource "test_object" "a" {
 		s.SetResourceInstanceCurrent(addr, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{"arg":"previous_run"}`),
 			Status:    states.ObjectTainted,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	ctx := testContext2(t, &ContextOpts{
@@ -89,7 +90,7 @@ resource "test_object" "a" {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, DefaultPlanOpts)
+	plan, diags := ctx.Plan(context.Background(), m, state, DefaultPlanOpts)
 	assertNoErrors(t, diags)
 
 	if !p.UpgradeResourceStateCalled {
@@ -209,6 +210,7 @@ data "test_data_source" "foo" {
 			},
 		},
 		mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`),
+		addrs.NoKey,
 	)
 
 	ctx := testContext2(t, &ContextOpts{
@@ -217,7 +219,7 @@ data "test_data_source" "foo" {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, SimplePlanOpts(plans.NormalMode, testInputValuesUnset(m.Module.Variables)))
+	plan, diags := ctx.Plan(context.Background(), m, state, SimplePlanOpts(plans.NormalMode, testInputValuesUnset(m.Module.Variables)))
 	assertNoErrors(t, diags)
 
 	for _, res := range plan.Changes.Resources {
@@ -251,7 +253,7 @@ output "out" {
 		s.SetResourceInstanceCurrent(mustResourceInstanceAddr(`data.test_object.a["old"]`), &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{"test_string":"foo"}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	ctx := testContext2(t, &ContextOpts{
@@ -260,7 +262,7 @@ output "out" {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, DefaultPlanOpts)
+	plan, diags := ctx.Plan(context.Background(), m, state, DefaultPlanOpts)
 	assertNoErrors(t, diags)
 
 	change, err := plan.Changes.Outputs[0].Decode()
@@ -325,7 +327,7 @@ resource "test_object" "a" {
 		},
 	})
 
-	_, diags := ctx.Plan(m, states.NewState(), DefaultPlanOpts)
+	_, diags := ctx.Plan(context.Background(), m, states.NewState(), DefaultPlanOpts)
 	assertNoErrors(t, diags)
 }
 
@@ -375,6 +377,7 @@ resource "test_resource" "b" {
 				AttrsJSON: []byte(`{"id":"a"}`),
 				Status:    states.ObjectReady,
 			}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`),
+			addrs.NoKey,
 		)
 		s.SetResourceInstanceCurrent(
 			mustResourceInstanceAddr(`module.mod["old"].test_resource.b`),
@@ -382,6 +385,7 @@ resource "test_resource" "b" {
 				AttrsJSON: []byte(`{"id":"b","value":"d"}`),
 				Status:    states.ObjectReady,
 			}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`),
+			addrs.NoKey,
 		)
 		s.SetResourceInstanceCurrent(
 			oldDataAddr,
@@ -389,6 +393,7 @@ resource "test_resource" "b" {
 				AttrsJSON: []byte(`{"id":"d"}`),
 				Status:    states.ObjectReady,
 			}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`),
+			addrs.NoKey,
 		)
 	})
 
@@ -398,7 +403,7 @@ resource "test_resource" "b" {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, DefaultPlanOpts)
+	plan, diags := ctx.Plan(context.Background(), m, state, DefaultPlanOpts)
 	assertNoErrors(t, diags)
 
 	oldMod := oldDataAddr.Module
@@ -498,7 +503,7 @@ func TestContext2Plan_resourceChecksInExpandedModule(t *testing.T) {
 	})
 
 	priorState := states.NewState()
-	plan, diags := ctx.Plan(m, priorState, DefaultPlanOpts)
+	plan, diags := ctx.Plan(context.Background(), m, priorState, DefaultPlanOpts)
 	assertNoErrors(t, diags)
 
 	resourceInsts := []addrs.AbsResourceInstance{
@@ -674,6 +679,7 @@ data "test_data_source" "a" {
 				AttrsJSON: []byte(`{"id":"boop","valid":false}`),
 				Status:    states.ObjectReady,
 			}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`),
+			addrs.NoKey,
 		)
 	})
 
@@ -683,7 +689,7 @@ data "test_data_source" "a" {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, priorState, DefaultPlanOpts)
+	plan, diags := ctx.Plan(context.Background(), m, priorState, DefaultPlanOpts)
 	assertNoErrors(t, diags)
 
 	if rc := plan.Changes.ResourceInstance(dataAddr); rc != nil {
@@ -711,7 +717,7 @@ data "test_data_source" "a" {
 	// This is primarily a plan-time test, since the special handling of
 	// data resources is a plan-time concern, but we'll still try applying the
 	// plan here just to make sure it's valid.
-	newState, diags := ctx.Apply(plan, m)
+	newState, diags := ctx.Apply(context.Background(), plan, m)
 	assertNoErrors(t, diags)
 
 	if rs := newState.ResourceInstance(dataAddr); rs != nil {
@@ -886,6 +892,7 @@ resource "test_resource" "b" {
 				AttrsJSON: []byte(`{"id":"main","valid":false}`),
 				Status:    states.ObjectReady,
 			}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`),
+			addrs.NoKey,
 		)
 		s.SetResourceInstanceCurrent(
 			managedAddrB,
@@ -893,6 +900,7 @@ resource "test_resource" "b" {
 				AttrsJSON: []byte(`{"id":"checker","valid":true}`),
 				Status:    states.ObjectReady,
 			}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`),
+			addrs.NoKey,
 		)
 	})
 
@@ -902,7 +910,7 @@ resource "test_resource" "b" {
 		},
 	})
 
-	_, diags := ctx.Plan(m, priorState, DefaultPlanOpts)
+	_, diags := ctx.Plan(context.Background(), m, priorState, DefaultPlanOpts)
 	if !diags.HasErrors() {
 		t.Fatalf("unexpected successful plan; should've failed with non-passing precondition")
 	}
@@ -986,7 +994,7 @@ resource "test_object" "a" {
 		s.SetResourceInstanceCurrent(addr, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{"arg":"before"}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	ctx := testContext2(t, &ContextOpts{
@@ -995,7 +1003,7 @@ resource "test_object" "a" {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode:        plans.DestroyMode,
 		SkipRefresh: false, // the default
 	})
@@ -1086,7 +1094,7 @@ resource "test_object" "a" {
 		s.SetResourceInstanceCurrent(addr, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{"arg":"before"}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	ctx := testContext2(t, &ContextOpts{
@@ -1095,7 +1103,7 @@ resource "test_object" "a" {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode:        plans.DestroyMode,
 		SkipRefresh: true,
 	})
@@ -1188,7 +1196,7 @@ output "result" {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, DefaultPlanOpts)
+	plan, diags := ctx.Plan(context.Background(), m, state, DefaultPlanOpts)
 	assertNoErrors(t, diags)
 
 	for _, res := range plan.Changes.Resources {
@@ -1226,7 +1234,7 @@ provider "test" {
 		s.SetResourceInstanceCurrent(addr, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{"test_string":"foo"}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	ctx := testContext2(t, &ContextOpts{
@@ -1235,7 +1243,7 @@ provider "test" {
 		},
 	})
 
-	_, diags := ctx.Plan(m, state, &PlanOpts{
+	_, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.DestroyMode,
 	})
 	assertNoErrors(t, diags)
@@ -1262,7 +1270,7 @@ func TestContext2Plan_movedResourceBasic(t *testing.T) {
 		s.SetResourceInstanceCurrent(addrA, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	p := simpleMockProvider()
@@ -1272,7 +1280,7 @@ func TestContext2Plan_movedResourceBasic(t *testing.T) {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.NormalMode,
 		ForceReplace: []addrs.AbsResourceInstance{
 			addrA,
@@ -1326,11 +1334,11 @@ func TestContext2Plan_movedResourceCollision(t *testing.T) {
 		s.SetResourceInstanceCurrent(addrNoKey, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 		s.SetResourceInstanceCurrent(addrZeroKey, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	p := simpleMockProvider()
@@ -1340,7 +1348,7 @@ func TestContext2Plan_movedResourceCollision(t *testing.T) {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.NormalMode,
 	})
 	if diags.HasErrors() {
@@ -1432,11 +1440,11 @@ func TestContext2Plan_movedResourceCollisionDestroy(t *testing.T) {
 		s.SetResourceInstanceCurrent(addrNoKey, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 		s.SetResourceInstanceCurrent(addrZeroKey, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	p := simpleMockProvider()
@@ -1446,7 +1454,7 @@ func TestContext2Plan_movedResourceCollisionDestroy(t *testing.T) {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.DestroyMode,
 	})
 	if diags.HasErrors() {
@@ -1544,7 +1552,7 @@ func TestContext2Plan_movedResourceUntargeted(t *testing.T) {
 		s.SetResourceInstanceCurrent(addrA, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	p := simpleMockProvider()
@@ -1555,7 +1563,7 @@ func TestContext2Plan_movedResourceUntargeted(t *testing.T) {
 	})
 
 	t.Run("without targeting instance A", func(t *testing.T) {
-		_, diags := ctx.Plan(m, state, &PlanOpts{
+		_, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 			Mode: plans.NormalMode,
 			Targets: []addrs.Targetable{
 				// NOTE: addrA isn't included here, but it's pending move to addrB
@@ -1595,7 +1603,7 @@ Note that adding these options may include further additional resource instances
 		}
 	})
 	t.Run("without targeting instance B", func(t *testing.T) {
-		_, diags := ctx.Plan(m, state, &PlanOpts{
+		_, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 			Mode: plans.NormalMode,
 			Targets: []addrs.Targetable{
 				addrA,
@@ -1635,7 +1643,7 @@ Note that adding these options may include further additional resource instances
 		}
 	})
 	t.Run("without targeting either instance", func(t *testing.T) {
-		_, diags := ctx.Plan(m, state, &PlanOpts{
+		_, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 			Mode: plans.NormalMode,
 			Targets: []addrs.Targetable{
 				mustResourceInstanceAddr("test_object.unrelated"),
@@ -1680,7 +1688,7 @@ Note that adding these options may include further additional resource instances
 		// addresses to the set of targets. This additional test makes sure that
 		// following that advice actually leads to a valid result.
 
-		_, diags := ctx.Plan(m, state, &PlanOpts{
+		_, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 			Mode: plans.NormalMode,
 			Targets: []addrs.Targetable{
 				// This time we're including both addresses in the target,
@@ -1714,7 +1722,7 @@ The -target and -exclude options are not for routine use, and are provided only 
 		}
 	})
 	t.Run("excluding instance A", func(t *testing.T) {
-		_, diags := ctx.Plan(m, state, &PlanOpts{
+		_, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 			Mode: plans.NormalMode,
 			Excludes: []addrs.Targetable{
 				// NOTE: addrA isn't excluded, and it's pending move to addrB
@@ -1754,7 +1762,7 @@ Note that removing these options may include further additional resource instanc
 		}
 	})
 	t.Run("excluding instance B", func(t *testing.T) {
-		_, diags := ctx.Plan(m, state, &PlanOpts{
+		_, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 			Mode: plans.NormalMode,
 			Excludes: []addrs.Targetable{
 				addrB,
@@ -1794,7 +1802,7 @@ Note that removing these options may include further additional resource instanc
 		}
 	})
 	t.Run("excluding both addresses", func(t *testing.T) {
-		_, diags := ctx.Plan(m, state, &PlanOpts{
+		_, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 			Mode: plans.NormalMode,
 			Excludes: []addrs.Targetable{
 				// NOTE: both addrA nor addrB are excluded here, but there's
@@ -1839,7 +1847,7 @@ Note that removing these options may include further additional resource instanc
 		// The error messages in the other subtests above suggest removing
 		// addresses to the set of excludes. This additional test makes sure that
 		// following that advice actually leads to a valid result.
-		_, diags := ctx.Plan(m, state, &PlanOpts{
+		_, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 			Mode: plans.NormalMode,
 			Excludes: []addrs.Targetable{
 				mustResourceInstanceAddr("test_object.unrelated"),
@@ -1890,12 +1898,12 @@ resource "test_object" "b" {
 		s.SetResourceInstanceCurrent(addrA, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 		s.SetResourceInstanceCurrent(addrB, &states.ResourceInstanceObjectSrc{
 			// old_list is no longer in the schema
 			AttrsJSON: []byte(`{"old_list":["used to be","a list here"]}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	p := simpleMockProvider()
@@ -1917,7 +1925,7 @@ resource "test_object" "b" {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.NormalMode,
 		Targets: []addrs.Targetable{
 			addrA,
@@ -1953,12 +1961,12 @@ resource "test_object" "b" {
 		s.SetResourceInstanceCurrent(addrA, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 		s.SetResourceInstanceCurrent(addrB, &states.ResourceInstanceObjectSrc{
 			// old_list is no longer in the schema
 			AttrsJSON: []byte(`{"old_list":["used to be","a list here"]}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	p := simpleMockProvider()
@@ -1981,7 +1989,7 @@ resource "test_object" "b" {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.NormalMode,
 		Excludes: []addrs.Targetable{
 			addrB,
@@ -2021,7 +2029,7 @@ func TestContext2Plan_movedResourceRefreshOnly(t *testing.T) {
 		s.SetResourceInstanceCurrent(addrA, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	p := simpleMockProvider()
@@ -2031,7 +2039,7 @@ func TestContext2Plan_movedResourceRefreshOnly(t *testing.T) {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.RefreshOnlyMode,
 	})
 	if diags.HasErrors() {
@@ -2093,7 +2101,7 @@ func TestContext2Plan_refreshOnlyMode(t *testing.T) {
 		s.SetResourceInstanceCurrent(addr, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{"arg":"before"}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	p := simpleMockProvider()
@@ -2146,7 +2154,7 @@ func TestContext2Plan_refreshOnlyMode(t *testing.T) {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.RefreshOnlyMode,
 	})
 	if diags.HasErrors() {
@@ -2229,7 +2237,7 @@ func TestContext2Plan_refreshOnlyMode_deposed(t *testing.T) {
 		s.SetResourceInstanceDeposed(addr, deposedKey, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{"arg":"before"}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	p := simpleMockProvider()
@@ -2282,7 +2290,7 @@ func TestContext2Plan_refreshOnlyMode_deposed(t *testing.T) {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.RefreshOnlyMode,
 	})
 	if diags.HasErrors() {
@@ -2366,11 +2374,11 @@ func TestContext2Plan_refreshOnlyMode_orphan(t *testing.T) {
 		s.SetResourceInstanceCurrent(addr.Instance(addrs.IntKey(0)), &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{"arg":"before"}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 		s.SetResourceInstanceCurrent(addr.Instance(addrs.IntKey(1)), &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{"arg":"before"}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	p := simpleMockProvider()
@@ -2423,7 +2431,7 @@ func TestContext2Plan_refreshOnlyMode_orphan(t *testing.T) {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.RefreshOnlyMode,
 	})
 	if diags.HasErrors() {
@@ -2504,7 +2512,7 @@ output "root" {
 
 	ctx := testContext2(t, &ContextOpts{})
 
-	_, diags := ctx.Plan(m, states.NewState(), DefaultPlanOpts)
+	_, diags := ctx.Plan(context.Background(), m, states.NewState(), DefaultPlanOpts)
 	if !diags.HasErrors() {
 		t.Fatal("succeeded; want errors")
 	}
@@ -2583,6 +2591,7 @@ data "test_data_source" "foo" {
 			},
 		},
 		mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`),
+		addrs.NoKey,
 	)
 	root.SetResourceInstanceCurrent(
 		mustResourceInstanceAddr("test_instance.bar").Resource,
@@ -2597,6 +2606,7 @@ data "test_data_source" "foo" {
 			},
 		},
 		mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`),
+		addrs.NoKey,
 	)
 
 	ctx := testContext2(t, &ContextOpts{
@@ -2605,7 +2615,7 @@ data "test_data_source" "foo" {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, DefaultPlanOpts)
+	plan, diags := ctx.Plan(context.Background(), m, state, DefaultPlanOpts)
 	assertNoErrors(t, diags)
 
 	for _, res := range plan.Changes.Resources {
@@ -2640,11 +2650,11 @@ func TestContext2Plan_forceReplace(t *testing.T) {
 		s.SetResourceInstanceCurrent(addrA, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 		s.SetResourceInstanceCurrent(addrB, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	p := simpleMockProvider()
@@ -2654,7 +2664,7 @@ func TestContext2Plan_forceReplace(t *testing.T) {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.NormalMode,
 		ForceReplace: []addrs.AbsResourceInstance{
 			addrA,
@@ -2708,11 +2718,11 @@ func TestContext2Plan_forceReplaceIncompleteAddr(t *testing.T) {
 		s.SetResourceInstanceCurrent(addr0, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 		s.SetResourceInstanceCurrent(addr1, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	p := simpleMockProvider()
@@ -2722,7 +2732,7 @@ func TestContext2Plan_forceReplaceIncompleteAddr(t *testing.T) {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.NormalMode,
 		ForceReplace: []addrs.AbsResourceInstance{
 			addrBare,
@@ -2828,6 +2838,7 @@ output "output" {
 			AttrsJSON: []byte(`{"id":"foo","value":"a"}`),
 		},
 		mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`),
+		addrs.NoKey,
 	)
 	one.SetResourceInstanceCurrent(
 		mustResourceInstanceAddr(`data.test_data_source.d`).Resource,
@@ -2836,6 +2847,7 @@ output "output" {
 			AttrsJSON: []byte(`{"id":"data"}`),
 		},
 		mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`),
+		addrs.NoKey,
 	)
 	two.SetResourceInstanceCurrent(
 		mustResourceInstanceAddr(`test_resource.x`).Resource,
@@ -2844,6 +2856,7 @@ output "output" {
 			AttrsJSON: []byte(`{"id":"foo","value":"foo"}`),
 		},
 		mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`),
+		addrs.NoKey,
 	)
 	two.SetResourceInstanceCurrent(
 		mustResourceInstanceAddr(`data.test_data_source.d`).Resource,
@@ -2852,6 +2865,7 @@ output "output" {
 			AttrsJSON: []byte(`{"id":"data"}`),
 		},
 		mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`),
+		addrs.NoKey,
 	)
 
 	ctx := testContext2(t, &ContextOpts{
@@ -2860,7 +2874,7 @@ output "output" {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, DefaultPlanOpts)
+	plan, diags := ctx.Plan(context.Background(), m, state, DefaultPlanOpts)
 	assertNoErrors(t, diags)
 
 	for _, res := range plan.Changes.Resources {
@@ -2919,7 +2933,7 @@ func TestContext2Plan_moduleExpandOrphansResourceInstance(t *testing.T) {
 		s.SetResourceInstanceCurrent(addrNoKey, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	p := simpleMockProvider()
@@ -2929,7 +2943,7 @@ func TestContext2Plan_moduleExpandOrphansResourceInstance(t *testing.T) {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.NormalMode,
 	})
 	if diags.HasErrors() {
@@ -3034,7 +3048,7 @@ resource "test_resource" "a" {
 			resp.LegacyTypeSystem = true
 			return resp
 		}
-		plan, diags := ctx.Plan(m, states.NewState(), &PlanOpts{
+		plan, diags := ctx.Plan(context.Background(), m, states.NewState(), &PlanOpts{
 			Mode: plans.NormalMode,
 			SetVariables: InputValues{
 				"boop": &InputValue{
@@ -3063,7 +3077,7 @@ resource "test_resource" "a" {
 			},
 		})
 
-		_, diags := ctx.Plan(m, states.NewState(), &PlanOpts{
+		_, diags := ctx.Plan(context.Background(), m, states.NewState(), &PlanOpts{
 			Mode: plans.NormalMode,
 			SetVariables: InputValues{
 				"boop": &InputValue{
@@ -3094,9 +3108,9 @@ resource "test_resource" "a" {
 			s.SetResourceInstanceCurrent(mustResourceInstanceAddr("test_resource.a"), &states.ResourceInstanceObjectSrc{
 				AttrsJSON: []byte(`{"value":"boop","output":"blorp"}`),
 				Status:    states.ObjectReady,
-			}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+			}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 		})
-		_, diags := ctx.Plan(m, state, &PlanOpts{
+		_, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 			Mode: plans.RefreshOnlyMode,
 			SetVariables: InputValues{
 				"boop": &InputValue{
@@ -3132,7 +3146,7 @@ resource "test_resource" "a" {
 			resp.LegacyTypeSystem = true
 			return resp
 		}
-		_, diags := ctx.Plan(m, states.NewState(), &PlanOpts{
+		_, diags := ctx.Plan(context.Background(), m, states.NewState(), &PlanOpts{
 			Mode: plans.NormalMode,
 			SetVariables: InputValues{
 				"boop": &InputValue{
@@ -3163,7 +3177,7 @@ resource "test_resource" "a" {
 			s.SetResourceInstanceCurrent(mustResourceInstanceAddr("test_resource.a"), &states.ResourceInstanceObjectSrc{
 				AttrsJSON: []byte(`{"value":"boop","output":"blorp"}`),
 				Status:    states.ObjectReady,
-			}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+			}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 		})
 		p.ReadResourceFn = func(req providers.ReadResourceRequest) (resp providers.ReadResourceResponse) {
 			newVal, err := cty.Transform(req.PriorState, func(path cty.Path, v cty.Value) (cty.Value, error) {
@@ -3181,7 +3195,7 @@ resource "test_resource" "a" {
 				NewState: newVal,
 			}
 		}
-		_, diags := ctx.Plan(m, state, &PlanOpts{
+		_, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 			Mode: plans.RefreshOnlyMode,
 			SetVariables: InputValues{
 				"boop": &InputValue{
@@ -3216,7 +3230,7 @@ resource "test_resource" "a" {
 			s.SetResourceInstanceCurrent(mustResourceInstanceAddr("test_resource.a"), &states.ResourceInstanceObjectSrc{
 				AttrsJSON: []byte(`{"value":"boop","output":"blorp"}`),
 				Status:    states.ObjectReady,
-			}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+			}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 		})
 		p.ReadResourceFn = func(req providers.ReadResourceRequest) (resp providers.ReadResourceResponse) {
 			newVal, err := cty.Transform(req.PriorState, func(path cty.Path, v cty.Value) (cty.Value, error) {
@@ -3234,7 +3248,7 @@ resource "test_resource" "a" {
 				NewState: newVal,
 			}
 		}
-		_, diags := ctx.Plan(m, state, &PlanOpts{
+		_, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 			Mode: plans.RefreshOnlyMode,
 			SetVariables: InputValues{
 				"boop": &InputValue{
@@ -3333,7 +3347,7 @@ resource "test_resource" "a" {
 				"results": cty.ListVal([]cty.Value{cty.StringVal("boop")}),
 			}),
 		}
-		plan, diags := ctx.Plan(m, states.NewState(), &PlanOpts{
+		plan, diags := ctx.Plan(context.Background(), m, states.NewState(), &PlanOpts{
 			Mode: plans.NormalMode,
 			SetVariables: InputValues{
 				"boop": &InputValue{
@@ -3377,7 +3391,7 @@ resource "test_resource" "a" {
 				addrs.NewDefaultProvider("test"): testProviderFuncFixed(p),
 			},
 		})
-		_, diags := ctx.Plan(m, states.NewState(), &PlanOpts{
+		_, diags := ctx.Plan(context.Background(), m, states.NewState(), &PlanOpts{
 			Mode: plans.NormalMode,
 			SetVariables: InputValues{
 				"boop": &InputValue{
@@ -3403,7 +3417,7 @@ resource "test_resource" "a" {
 				addrs.NewDefaultProvider("test"): testProviderFuncFixed(p),
 			},
 		})
-		plan, diags := ctx.Plan(m, states.NewState(), &PlanOpts{
+		plan, diags := ctx.Plan(context.Background(), m, states.NewState(), &PlanOpts{
 			Mode: plans.RefreshOnlyMode,
 			SetVariables: InputValues{
 				"boop": &InputValue{
@@ -3447,7 +3461,7 @@ resource "test_resource" "a" {
 				"results": cty.ListValEmpty(cty.String),
 			}),
 		}
-		_, diags := ctx.Plan(m, states.NewState(), &PlanOpts{
+		_, diags := ctx.Plan(context.Background(), m, states.NewState(), &PlanOpts{
 			Mode: plans.NormalMode,
 			SetVariables: InputValues{
 				"boop": &InputValue{
@@ -3479,7 +3493,7 @@ resource "test_resource" "a" {
 				"results": cty.ListValEmpty(cty.String),
 			}),
 		}
-		plan, diags := ctx.Plan(m, states.NewState(), &PlanOpts{
+		plan, diags := ctx.Plan(context.Background(), m, states.NewState(), &PlanOpts{
 			Mode: plans.RefreshOnlyMode,
 			SetVariables: InputValues{
 				"boop": &InputValue{
@@ -3520,7 +3534,7 @@ resource "test_resource" "a" {
 				"results": cty.ListValEmpty(cty.String),
 			}),
 		}
-		_, diags := ctx.Plan(m, states.NewState(), &PlanOpts{
+		_, diags := ctx.Plan(context.Background(), m, states.NewState(), &PlanOpts{
 			Mode: plans.RefreshOnlyMode,
 			SetVariables: InputValues{
 				"boop": &InputValue{
@@ -3572,7 +3586,7 @@ output "a" {
 	})
 
 	t.Run("condition pass", func(t *testing.T) {
-		plan, diags := ctx.Plan(m, states.NewState(), &PlanOpts{
+		plan, diags := ctx.Plan(context.Background(), m, states.NewState(), &PlanOpts{
 			Mode: plans.NormalMode,
 			SetVariables: InputValues{
 				"boop": &InputValue{
@@ -3606,7 +3620,7 @@ output "a" {
 	})
 
 	t.Run("condition fail", func(t *testing.T) {
-		_, diags := ctx.Plan(m, states.NewState(), &PlanOpts{
+		_, diags := ctx.Plan(context.Background(), m, states.NewState(), &PlanOpts{
 			Mode: plans.NormalMode,
 			SetVariables: InputValues{
 				"boop": &InputValue{
@@ -3624,7 +3638,7 @@ output "a" {
 	})
 
 	t.Run("condition fail refresh-only", func(t *testing.T) {
-		plan, diags := ctx.Plan(m, states.NewState(), &PlanOpts{
+		plan, diags := ctx.Plan(context.Background(), m, states.NewState(), &PlanOpts{
 			Mode: plans.RefreshOnlyMode,
 			SetVariables: InputValues{
 				"boop": &InputValue{
@@ -3728,7 +3742,7 @@ func TestContext2Plan_preconditionErrors(t *testing.T) {
 			`, tc.condition)
 			m := testModuleInline(t, map[string]string{"main.tf": main})
 
-			plan, diags := ctx.Plan(m, states.NewState(), DefaultPlanOpts)
+			plan, diags := ctx.Plan(context.Background(), m, states.NewState(), DefaultPlanOpts)
 			if !diags.HasErrors() {
 				t.Fatal("succeeded; want errors")
 			}
@@ -3782,7 +3796,7 @@ output "a" {
 `,
 	})
 
-	_, diags := ctx.Plan(m, states.NewState(), &PlanOpts{
+	_, diags := ctx.Plan(context.Background(), m, states.NewState(), &PlanOpts{
 		Mode: plans.NormalMode,
 		SetVariables: InputValues{
 			"boop": &InputValue{
@@ -3888,6 +3902,7 @@ resource "test_object" "b" {
 				Status:    states.ObjectReady,
 			},
 			mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`),
+			addrs.NoKey,
 		)
 		s.SetResourceInstanceCurrent(
 			mustResourceInstanceAddr("test_object.b[0]"),
@@ -3896,12 +3911,13 @@ resource "test_object" "b" {
 				Status:    states.ObjectReady,
 			},
 			mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`),
+			addrs.NoKey,
 		)
 	})
 	for _, configuration := range configurations {
 		m := testModuleInline(t, configuration.inlineConfiguration)
 
-		plan, diags := ctx.Plan(m, state, &PlanOpts{
+		plan, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 			Mode: plans.NormalMode,
 		})
 		if diags.HasErrors() {
@@ -3977,7 +3993,7 @@ data "test_object" "a" {
 		s.SetResourceInstanceCurrent(mustResourceInstanceAddr(`data.test_object.a`), &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{"id":"old","obj":[{"args":["string"]}]}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	ctx := testContext2(t, &ContextOpts{
@@ -3986,7 +4002,7 @@ data "test_object" "a" {
 		},
 	})
 
-	_, diags := ctx.Plan(m, state, DefaultPlanOpts)
+	_, diags := ctx.Plan(context.Background(), m, state, DefaultPlanOpts)
 	assertNoErrors(t, diags)
 }
 
@@ -4018,6 +4034,7 @@ resource "test_object" "b" {
 			Dependencies: []addrs.ConfigResource{mustResourceInstanceAddr("test_object.b").ContainingResource().Config()},
 		},
 		mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`),
+		addrs.NoKey,
 	)
 	root.SetResourceInstanceCurrent(
 		mustResourceInstanceAddr("test_object.b").Resource,
@@ -4026,6 +4043,7 @@ resource "test_object" "b" {
 			AttrsJSON: []byte(`{"test_string":"b"}`),
 		},
 		mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`),
+		addrs.NoKey,
 	)
 
 	ctx := testContext2(t, &ContextOpts{
@@ -4034,7 +4052,7 @@ resource "test_object" "b" {
 		},
 	})
 
-	_, diags := ctx.Plan(m, state, &PlanOpts{
+	_, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.NormalMode,
 	})
 	if !diags.HasErrors() {
@@ -4081,7 +4099,7 @@ output "out" {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.DestroyMode,
 	})
 
@@ -4139,6 +4157,7 @@ resource "test_object" "b" {
 			Dependencies: []addrs.ConfigResource{},
 		},
 		mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`),
+		addrs.NoKey,
 	)
 	root.SetResourceInstanceCurrent(
 		mustResourceInstanceAddr("test_object.a[0]").Resource,
@@ -4148,6 +4167,7 @@ resource "test_object" "b" {
 			Dependencies: []addrs.ConfigResource{},
 		},
 		mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`),
+		addrs.NoKey,
 	)
 
 	ctx := testContext2(t, &ContextOpts{
@@ -4156,7 +4176,7 @@ resource "test_object" "b" {
 		},
 	})
 
-	_, diags := ctx.Plan(m, state, &PlanOpts{
+	_, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.NormalMode,
 	})
 	assertNoErrors(t, diags)
@@ -4221,9 +4241,9 @@ resource "test_object" "b" {
 
 	// plan+apply to create the initial state
 	opts := SimplePlanOpts(plans.NormalMode, testInputValuesUnset(m.Module.Variables))
-	plan, diags := ctx.Plan(m, states.NewState(), opts)
+	plan, diags := ctx.Plan(context.Background(), m, states.NewState(), opts)
 	assertNoErrors(t, diags)
-	state, diags := ctx.Apply(plan, m)
+	state, diags := ctx.Apply(context.Background(), plan, m)
 	assertNoErrors(t, diags)
 
 	// Resource changes which have dependencies across providers which
@@ -4237,7 +4257,7 @@ resource "test_object" "b" {
 	addrB := mustResourceInstanceAddr(`test_object.b`)
 	opts.ForceReplace = []addrs.AbsResourceInstance{addrA, addrB}
 
-	_, diags = ctx.Plan(m, state, opts)
+	_, diags = ctx.Plan(context.Background(), m, state, opts)
 	assertNoErrors(t, diags)
 }
 
@@ -4318,6 +4338,7 @@ output "out" {
 			Dependencies: []addrs.ConfigResource{},
 		},
 		mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`),
+		addrs.NoKey,
 	)
 	mod.SetResourceInstanceCurrent(
 		mustResourceInstanceAddr("test_object.a[1]").Resource,
@@ -4327,6 +4348,7 @@ output "out" {
 			Dependencies: []addrs.ConfigResource{},
 		},
 		mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`),
+		addrs.NoKey,
 	)
 
 	ctx := testContext2(t, &ContextOpts{
@@ -4335,7 +4357,7 @@ output "out" {
 		},
 	})
 
-	_, diags := ctx.Plan(m, state, &PlanOpts{
+	_, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.DestroyMode,
 	})
 	assertNoErrors(t, diags)
@@ -4377,7 +4399,7 @@ output "out" {
 		},
 	})
 
-	_, diags := ctx.Plan(m, state, &PlanOpts{
+	_, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.DestroyMode,
 	})
 	assertNoErrors(t, diags)
@@ -4405,7 +4427,7 @@ func TestContext2Plan_dataSourceReadPlanError(t *testing.T) {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, DefaultPlanOpts)
+	plan, diags := ctx.Plan(context.Background(), m, state, DefaultPlanOpts)
 	if !diags.HasErrors() {
 		t.Fatalf("expected plan error")
 	}
@@ -4461,6 +4483,7 @@ resource "test_object" "a" {
 			Dependencies: []addrs.ConfigResource{},
 		},
 		mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`),
+		addrs.NoKey,
 	)
 	ctx := testContext2(t, &ContextOpts{
 		Providers: map[addrs.Provider]providers.Factory{
@@ -4470,7 +4493,7 @@ resource "test_object" "a" {
 
 	// plan+apply to create the initial state
 	opts := SimplePlanOpts(plans.NormalMode, testInputValuesUnset(m.Module.Variables))
-	plan, diags := ctx.Plan(m, state, opts)
+	plan, diags := ctx.Plan(context.Background(), m, state, opts)
 	assertNoErrors(t, diags)
 
 	for _, c := range plan.Changes.Resources {
@@ -4556,7 +4579,7 @@ import {
 	for _, configuration := range configurations {
 		m := testModuleInline(t, configuration.inlineConfiguration)
 
-		plan, diags := ctx.Plan(m, states.NewState(), DefaultPlanOpts)
+		plan, diags := ctx.Plan(context.Background(), m, states.NewState(), DefaultPlanOpts)
 		if diags.HasErrors() {
 			t.Fatalf("unexpected errors\n%s", diags.Err().Error())
 		}
@@ -4832,7 +4855,7 @@ import {
 				},
 			}
 
-			plan, diags := ctx.Plan(m, states.NewState(), SimplePlanOpts(plans.NormalMode, testInputValuesUnset(m.Module.Variables)))
+			plan, diags := ctx.Plan(context.Background(), m, states.NewState(), SimplePlanOpts(plans.NormalMode, testInputValuesUnset(m.Module.Variables)))
 			if diags.HasErrors() {
 				t.Fatalf("unexpected errors\n%s", diags.Err().Error())
 			}
@@ -5030,7 +5053,7 @@ import {
 				},
 			}
 
-			_, diags := ctx.Plan(m, states.NewState(), SimplePlanOpts(plans.NormalMode, testInputValuesUnset(m.Module.Variables)))
+			_, diags := ctx.Plan(context.Background(), m, states.NewState(), SimplePlanOpts(plans.NormalMode, testInputValuesUnset(m.Module.Variables)))
 
 			if !diags.HasErrors() {
 				t.Fatal("succeeded; want errors")
@@ -5180,7 +5203,7 @@ import {
 				},
 			}
 
-			plan, diags := ctx.Plan(m, states.NewState(), SimplePlanOpts(plans.NormalMode, testInputValuesUnset(m.Module.Variables)))
+			plan, diags := ctx.Plan(context.Background(), m, states.NewState(), SimplePlanOpts(plans.NormalMode, testInputValuesUnset(m.Module.Variables)))
 			if diags.HasErrors() {
 				t.Fatalf("unexpected errors\n%s", diags.Err().Error())
 			}
@@ -5517,7 +5540,7 @@ import {
 				},
 			}
 
-			_, diags := ctx.Plan(m, states.NewState(), SimplePlanOpts(plans.NormalMode, testInputValuesUnset(m.Module.Variables)))
+			_, diags := ctx.Plan(context.Background(), m, states.NewState(), SimplePlanOpts(plans.NormalMode, testInputValuesUnset(m.Module.Variables)))
 
 			if !diags.HasErrors() {
 				t.Fatal("succeeded; want errors")
@@ -5575,9 +5598,10 @@ import {
 			AttrsJSON: []byte(`{"test_string":"foo"}`),
 		},
 		mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`),
+		addrs.NoKey,
 	)
 
-	plan, diags := ctx.Plan(m, state, DefaultPlanOpts)
+	plan, diags := ctx.Plan(context.Background(), m, state, DefaultPlanOpts)
 	if diags.HasErrors() {
 		t.Fatalf("unexpected errors\n%s", diags.Err().Error())
 	}
@@ -5643,7 +5667,7 @@ import {
 		},
 	}
 
-	plan, diags := ctx.Plan(m, states.NewState(), DefaultPlanOpts)
+	plan, diags := ctx.Plan(context.Background(), m, states.NewState(), DefaultPlanOpts)
 	if diags.HasErrors() {
 		t.Fatalf("unexpected errors\n%s", diags.Err().Error())
 	}
@@ -5709,7 +5733,7 @@ import {
 		},
 	}
 
-	plan, diags := ctx.Plan(m, states.NewState(), &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, states.NewState(), &PlanOpts{
 		Mode: plans.NormalMode,
 		ForceReplace: []addrs.AbsResourceInstance{
 			addr,
@@ -5785,7 +5809,7 @@ import {
 		},
 	}
 
-	_, diags := ctx.Plan(m, states.NewState(), &PlanOpts{
+	_, diags := ctx.Plan(context.Background(), m, states.NewState(), &PlanOpts{
 		Mode: plans.NormalMode,
 		ForceReplace: []addrs.AbsResourceInstance{
 			addr,
@@ -5820,7 +5844,7 @@ func TestContext2Plan_importIdVariable(t *testing.T) {
 		},
 	}
 
-	_, diags := ctx.Plan(m, states.NewState(), &PlanOpts{
+	_, diags := ctx.Plan(context.Background(), m, states.NewState(), &PlanOpts{
 		SetVariables: InputValues{
 			"the_id": &InputValue{
 				// let var take its default value
@@ -5853,7 +5877,7 @@ func TestContext2Plan_importIdReference(t *testing.T) {
 		},
 	}
 
-	_, diags := ctx.Plan(m, states.NewState(), &PlanOpts{
+	_, diags := ctx.Plan(context.Background(), m, states.NewState(), &PlanOpts{
 		SetVariables: InputValues{
 			"the_id": &InputValue{
 				// let var take its default value
@@ -5886,7 +5910,7 @@ func TestContext2Plan_importIdFunc(t *testing.T) {
 		},
 	}
 
-	_, diags := ctx.Plan(m, states.NewState(), DefaultPlanOpts)
+	_, diags := ctx.Plan(context.Background(), m, states.NewState(), DefaultPlanOpts)
 	if diags.HasErrors() {
 		t.Fatalf("unexpected errors: %s", diags.Err())
 	}
@@ -5949,7 +5973,7 @@ func TestContext2Plan_importIdDataSource(t *testing.T) {
 		},
 	})
 
-	_, diags := ctx.Plan(m, states.NewState(), DefaultPlanOpts)
+	_, diags := ctx.Plan(context.Background(), m, states.NewState(), DefaultPlanOpts)
 	if diags.HasErrors() {
 		t.Fatalf("unexpected errors: %s", diags.Err())
 	}
@@ -5987,7 +6011,7 @@ func TestContext2Plan_importIdModule(t *testing.T) {
 		},
 	})
 
-	_, diags := ctx.Plan(m, states.NewState(), DefaultPlanOpts)
+	_, diags := ctx.Plan(context.Background(), m, states.NewState(), DefaultPlanOpts)
 	if diags.HasErrors() {
 		t.Fatalf("unexpected errors: %s", diags.Err())
 	}
@@ -6002,7 +6026,7 @@ func TestContext2Plan_importIdInvalidNull(t *testing.T) {
 		},
 	})
 
-	_, diags := ctx.Plan(m, states.NewState(), &PlanOpts{
+	_, diags := ctx.Plan(context.Background(), m, states.NewState(), &PlanOpts{
 		SetVariables: InputValues{
 			"the_id": &InputValue{
 				Value: cty.NullVal(cty.String),
@@ -6055,7 +6079,7 @@ func TestContext2Plan_importIdInvalidUnknown(t *testing.T) {
 		},
 	}
 
-	_, diags := ctx.Plan(m, states.NewState(), DefaultPlanOpts)
+	_, diags := ctx.Plan(context.Background(), m, states.NewState(), DefaultPlanOpts)
 	if !diags.HasErrors() {
 		t.Fatal("succeeded; want errors")
 	}
@@ -6121,7 +6145,7 @@ resource "test_object" "a" {
 		},
 	}
 
-	plan, diags := ctx.Plan(m, states.NewState(), &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, states.NewState(), &PlanOpts{
 		Mode:               plans.NormalMode,
 		GenerateConfigPath: "generated.tf", // Actual value here doesn't matter, as long as it is not empty.
 	})
@@ -6294,7 +6318,7 @@ resource "test_object" "a" {
 				},
 			})
 
-			_, diags := ctx.Plan(m, states.NewState(), &PlanOpts{
+			_, diags := ctx.Plan(context.Background(), m, states.NewState(), &PlanOpts{
 				Mode: plans.NormalMode,
 			})
 
@@ -6410,7 +6434,7 @@ import {
 				},
 			}
 
-			_, diags := ctx.Plan(m, states.NewState(), SimplePlanOpts(plans.NormalMode, testInputValuesUnset(m.Module.Variables)))
+			_, diags := ctx.Plan(context.Background(), m, states.NewState(), SimplePlanOpts(plans.NormalMode, testInputValuesUnset(m.Module.Variables)))
 
 			if !diags.HasErrors() {
 				t.Fatalf("expected error")
@@ -6466,7 +6490,7 @@ import {
 		},
 	}
 
-	plan, diags := ctx.Plan(m, states.NewState(), &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, states.NewState(), &PlanOpts{
 		Mode:               plans.NormalMode,
 		GenerateConfigPath: "generated.tf", // Actual value here doesn't matter, as long as it is not empty.
 	})
@@ -6548,7 +6572,7 @@ import {
 		},
 	}
 
-	plan, diags := ctx.Plan(m, states.NewState(), &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, states.NewState(), &PlanOpts{
 		Mode:               plans.NormalMode,
 		GenerateConfigPath: "generated.tf", // Actual value here doesn't matter, as long as it is not empty.
 	})
@@ -6810,7 +6834,7 @@ resource "test_object" "a" {
 				},
 			})
 
-			_, diags := ctx.Plan(m, states.NewState(), &PlanOpts{
+			_, diags := ctx.Plan(context.Background(), m, states.NewState(), &PlanOpts{
 				Mode:               plans.NormalMode,
 				GenerateConfigPath: "generated.tf",
 			})
@@ -6868,7 +6892,7 @@ import {
 		},
 	}
 
-	_, diags := ctx.Plan(m, states.NewState(), &PlanOpts{
+	_, diags := ctx.Plan(context.Background(), m, states.NewState(), &PlanOpts{
 		Mode:               plans.NormalMode,
 		GenerateConfigPath: "generated.tf",
 	})
@@ -6918,7 +6942,7 @@ import {
 		},
 	}
 
-	plan, diags := ctx.Plan(m, states.NewState(), &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, states.NewState(), &PlanOpts{
 		Mode:               plans.NormalMode,
 		GenerateConfigPath: "generated.tf", // Actual value here doesn't matter, as long as it is not empty.
 	})
@@ -6966,7 +6990,7 @@ locals {
 	})
 
 	state := states.NewState()
-	plan, diags := ctx.Plan(m, state, nil)
+	plan, diags := ctx.Plan(context.Background(), m, state, nil)
 	if diags.HasErrors() {
 		t.Errorf("expected no errors, but got %s", diags)
 	}
@@ -7012,7 +7036,7 @@ func TestContext2Plan_removedResourceBasic(t *testing.T) {
 		s.SetResourceInstanceCurrent(addr, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 		s.SetResourceInstanceDeposed(
 			mustResourceInstanceAddr(addr.String()),
 			desposedKey,
@@ -7022,6 +7046,7 @@ func TestContext2Plan_removedResourceBasic(t *testing.T) {
 				Dependencies: []addrs.ConfigResource{},
 			},
 			mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`),
+			addrs.NoKey,
 		)
 	})
 
@@ -7032,7 +7057,7 @@ func TestContext2Plan_removedResourceBasic(t *testing.T) {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.NormalMode,
 		ForceReplace: []addrs.AbsResourceInstance{
 			addr,
@@ -7092,7 +7117,7 @@ func TestContext2Plan_removedModuleBasic(t *testing.T) {
 		s.SetResourceInstanceCurrent(addr, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 		s.SetResourceInstanceDeposed(
 			mustResourceInstanceAddr(addr.String()),
 			desposedKey,
@@ -7102,6 +7127,7 @@ func TestContext2Plan_removedModuleBasic(t *testing.T) {
 				Dependencies: []addrs.ConfigResource{},
 			},
 			mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`),
+			addrs.NoKey,
 		)
 	})
 
@@ -7112,7 +7138,7 @@ func TestContext2Plan_removedModuleBasic(t *testing.T) {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.NormalMode,
 		ForceReplace: []addrs.AbsResourceInstance{
 			addr,
@@ -7174,11 +7200,11 @@ func TestContext2Plan_removedModuleForgetsAllInstances(t *testing.T) {
 		s.SetResourceInstanceCurrent(addrFirst, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 		s.SetResourceInstanceCurrent(addrSecond, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	p := simpleMockProvider()
@@ -7188,7 +7214,7 @@ func TestContext2Plan_removedModuleForgetsAllInstances(t *testing.T) {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.NormalMode,
 		ForceReplace: []addrs.AbsResourceInstance{
 			addrFirst, addrSecond,
@@ -7240,11 +7266,11 @@ func TestContext2Plan_removedResourceForgetsAllInstances(t *testing.T) {
 		s.SetResourceInstanceCurrent(addrFirst, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 		s.SetResourceInstanceCurrent(addrSecond, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	p := simpleMockProvider()
@@ -7254,7 +7280,7 @@ func TestContext2Plan_removedResourceForgetsAllInstances(t *testing.T) {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.NormalMode,
 		ForceReplace: []addrs.AbsResourceInstance{
 			addrFirst, addrSecond,
@@ -7308,7 +7334,7 @@ func TestContext2Plan_removedResourceInChildModuleFromParentModule(t *testing.T)
 		s.SetResourceInstanceCurrent(addr, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	p := simpleMockProvider()
@@ -7318,7 +7344,7 @@ func TestContext2Plan_removedResourceInChildModuleFromParentModule(t *testing.T)
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.NormalMode,
 		ForceReplace: []addrs.AbsResourceInstance{
 			addr,
@@ -7370,7 +7396,7 @@ func TestContext2Plan_removedResourceInChildModuleFromChildModule(t *testing.T) 
 		s.SetResourceInstanceCurrent(addr, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	p := simpleMockProvider()
@@ -7380,7 +7406,7 @@ func TestContext2Plan_removedResourceInChildModuleFromChildModule(t *testing.T) 
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.NormalMode,
 		ForceReplace: []addrs.AbsResourceInstance{
 			addr,
@@ -7433,7 +7459,7 @@ func TestContext2Plan_removedResourceInGrandchildModuleFromRootModule(t *testing
 		s.SetResourceInstanceCurrent(addr, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	p := simpleMockProvider()
@@ -7443,7 +7469,7 @@ func TestContext2Plan_removedResourceInGrandchildModuleFromRootModule(t *testing
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.NormalMode,
 		ForceReplace: []addrs.AbsResourceInstance{
 			addr,
@@ -7496,7 +7522,7 @@ func TestContext2Plan_removedChildModuleForgetsResourceInGrandchildModule(t *tes
 		s.SetResourceInstanceCurrent(addr, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	p := simpleMockProvider()
@@ -7506,7 +7532,7 @@ func TestContext2Plan_removedChildModuleForgetsResourceInGrandchildModule(t *tes
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.NormalMode,
 		ForceReplace: []addrs.AbsResourceInstance{
 			addr,
@@ -7564,7 +7590,7 @@ func TestContext2Plan_movedAndRemovedResourceAtTheSameTime(t *testing.T) {
 		s.SetResourceInstanceCurrent(addrA, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	p := simpleMockProvider()
@@ -7574,7 +7600,7 @@ func TestContext2Plan_movedAndRemovedResourceAtTheSameTime(t *testing.T) {
 		},
 	})
 
-	plan, diags := ctx.Plan(m, state, &PlanOpts{
+	plan, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.NormalMode,
 		ForceReplace: []addrs.AbsResourceInstance{
 			addrA,
@@ -7629,7 +7655,7 @@ func TestContext2Plan_removedResourceButResourceBlockStillExists(t *testing.T) {
 		s.SetResourceInstanceCurrent(addr, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	p := simpleMockProvider()
@@ -7639,7 +7665,7 @@ func TestContext2Plan_removedResourceButResourceBlockStillExists(t *testing.T) {
 		},
 	})
 
-	_, diags := ctx.Plan(m, state, &PlanOpts{
+	_, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.NormalMode,
 		ForceReplace: []addrs.AbsResourceInstance{
 			addr,
@@ -7678,7 +7704,7 @@ func TestContext2Plan_removedResourceButResourceBlockStillExistsInChildModule(t 
 		s.SetResourceInstanceCurrent(addr, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	p := simpleMockProvider()
@@ -7688,7 +7714,7 @@ func TestContext2Plan_removedResourceButResourceBlockStillExistsInChildModule(t 
 		},
 	})
 
-	_, diags := ctx.Plan(m, state, &PlanOpts{
+	_, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.NormalMode,
 		ForceReplace: []addrs.AbsResourceInstance{
 			addr,
@@ -7727,7 +7753,7 @@ func TestContext2Plan_removedModuleButModuleBlockStillExists(t *testing.T) {
 		s.SetResourceInstanceCurrent(addr, &states.ResourceInstanceObjectSrc{
 			AttrsJSON: []byte(`{}`),
 			Status:    states.ObjectReady,
-		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`))
+		}, mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`), addrs.NoKey)
 	})
 
 	p := simpleMockProvider()
@@ -7737,7 +7763,7 @@ func TestContext2Plan_removedModuleButModuleBlockStillExists(t *testing.T) {
 		},
 	})
 
-	_, diags := ctx.Plan(m, state, &PlanOpts{
+	_, diags := ctx.Plan(context.Background(), m, state, &PlanOpts{
 		Mode: plans.NormalMode,
 		ForceReplace: []addrs.AbsResourceInstance{
 			addr,
@@ -7818,7 +7844,7 @@ func TestContext2Plan_importResourceWithSensitiveDataSource(t *testing.T) {
 		},
 	}
 
-	plan, diags := ctx.Plan(m, states.NewState(), DefaultPlanOpts)
+	plan, diags := ctx.Plan(context.Background(), m, states.NewState(), DefaultPlanOpts)
 	if diags.HasErrors() {
 		t.Fatalf("unexpected errors\n%s", diags.Err().Error())
 	}
@@ -7897,7 +7923,7 @@ func TestContext2Plan_insufficient_block(t *testing.T) {
 				},
 			})
 
-			_, diags := ctx.Plan(m, states.NewState(), DefaultPlanOpts)
+			_, diags := ctx.Plan(context.Background(), m, states.NewState(), DefaultPlanOpts)
 			var expectedDiags tfdiags.Diagnostics
 
 			expectedDiags = expectedDiags.Append(
