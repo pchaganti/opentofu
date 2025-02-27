@@ -92,13 +92,13 @@ require (
 	go.uber.org/mock v0.4.0
 	golang.org/x/crypto v0.32.0
 	golang.org/x/exp v0.0.0-20230905200255-921286631fa9
-	golang.org/x/mod v0.17.0
+	golang.org/x/mod v0.21.0
 	golang.org/x/net v0.34.0
 	golang.org/x/oauth2 v0.16.0
 	golang.org/x/sys v0.29.0
 	golang.org/x/term v0.28.0
 	golang.org/x/text v0.21.0
-	golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d
+	golang.org/x/tools v0.25.0
 	google.golang.org/api v0.155.0
 	google.golang.org/genproto v0.0.0-20240123012728-ef4313101c80
 	google.golang.org/grpc v1.62.1
@@ -267,8 +267,6 @@ require (
 	sigs.k8s.io/yaml v1.2.0 // indirect
 )
 
-go 1.22.0
-
-toolchain go1.22.8
+go 1.24.0
 
 replace github.com/hashicorp/hcl/v2 v2.20.1 => github.com/opentofu/hcl/v2 v2.0.0-20240814143621-8048794c5c52
