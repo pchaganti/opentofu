@@ -293,6 +293,10 @@ func evalVariableValidation(validation *configs.CheckRule, hclCtx *hcl.EvalConte
 
 	result, moreDiags := validation.Condition.Value(hclCtx)
 	diags = diags.Append(moreDiags)
+
+	result, deprDiags := marks.ExtractDeprecatedDiagnosticsWithExpr(result, validation.Condition)
+	diags = diags.Append(deprDiags)
+
 	errorValue, errorDiags := validation.ErrorMessage.Value(hclCtx)
 
 	// The following error handling is a workaround to preserve backwards
@@ -345,6 +349,9 @@ func evalVariableValidation(validation *configs.CheckRule, hclCtx *hcl.EvalConte
 		// fallback failed, or the warning generated above if it succeeded.
 		diags = diags.Append(errorDiags)
 	}
+
+	errorValue, deprDiags = marks.ExtractDeprecatedDiagnosticsWithExpr(errorValue, validation.ErrorMessage)
+	diags = diags.Append(deprDiags)
 
 	if diags.HasErrors() {
 		log.Printf("[TRACE] evalVariableValidations: %s rule %s check rule evaluation failed: %s", addr, validation.DeclRange, diags.Err().Error())
@@ -435,6 +442,9 @@ You can correct this by removing references to sensitive values, or by carefully
 				})
 				errorMessage = "The error message included a sensitive value, so it will not be displayed."
 			} else {
+				// errorValue could have deprecated marks as well,
+				// so we need to unmark to not get panic from AsString()
+				errorValue = marks.RemoveDeepDeprecated(errorValue)
 				errorMessage = strings.TrimSpace(errorValue.AsString())
 			}
 		}
@@ -476,4 +486,30 @@ You can correct this by removing references to sensitive values, or by carefully
 		Status:         status,
 		FailureMessage: errorMessage,
 	}, diags
+}
+
+// evalVariableDeprecation checks if a variable is deprecated and if so it returns a warning diagnostic to be shown to the user
+func evalVariableDeprecation(addr addrs.AbsInputVariableInstance, config *configs.Variable, expr hcl.Expression, ctx EvalContext) tfdiags.Diagnostics {
+	if config.Deprecated == "" {
+		log.Printf("[TRACE] evalVariableDeprecation: variable %s does not have deprecation configured", addr)
+		return nil
+	}
+	// if the variable is not given in the module call, do not show a warning
+	if expr == nil {
+		log.Printf("[TRACE] evalVariableDeprecation: variable %s is marked as deprecated but is not used", addr)
+		return nil
+	}
+	val := ctx.GetVariableValue(addr)
+	if val == cty.NilVal {
+		log.Printf("[TRACE] evalVariableDeprecation: variable %s is marked as deprecated but no value given", addr)
+		return nil
+	}
+	log.Printf("[TRACE] evalVariableDeprecation: usage of deprecated variable %q detected", addr)
+	var diags tfdiags.Diagnostics
+	return diags.Append(&hcl.Diagnostic{
+		Severity: hcl.DiagWarning,
+		Summary:  fmt.Sprintf(`The variable %q is marked as deprecated by module author`, config.Name),
+		Detail:   fmt.Sprintf("This variable is marked as deprecated with the following message:\n%s", config.Deprecated),
+		Subject:  expr.Range().Ptr(),
+	})
 }
