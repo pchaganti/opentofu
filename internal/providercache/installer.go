@@ -15,11 +15,15 @@ import (
 
 	"github.com/apparentlymart/go-versions/versions"
 	"github.com/apparentlymart/go-versions/versions/constraints"
+	otelAttr "go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/opentofu/opentofu/internal/addrs"
 	copydir "github.com/opentofu/opentofu/internal/copy"
 	"github.com/opentofu/opentofu/internal/depsfile"
 	"github.com/opentofu/opentofu/internal/getproviders"
+	"github.com/opentofu/opentofu/internal/tracing"
+	"github.com/opentofu/opentofu/internal/tracing/traceattrs"
 )
 
 // Installer is the main type in this package, representing a provider installer
@@ -439,20 +443,31 @@ func (i *Installer) ensureProviderVersionsInstall(
 	authResults := map[addrs.Provider]*getproviders.PackageAuthenticationResult{} // record auth results for all successfully fetched providers
 
 	for provider, version := range need {
-		if err := ctx.Err(); err != nil {
+		traceCtx, span := tracing.Tracer().Start(ctx,
+			"Install Provider",
+			trace.WithAttributes(
+				otelAttr.String(traceattrs.ProviderAddress, provider.String()),
+				otelAttr.String(traceattrs.ProviderVersion, version.String()),
+			),
+		)
+
+		if err := traceCtx.Err(); err != nil {
 			// If our context has been cancelled or reached a timeout then
 			// we'll abort early, because subsequent operations against
 			// that context will fail immediately anyway.
+			tracing.SetSpanError(span, err)
+			span.End()
 			return nil, err
 		}
 
-		authResult, err := i.ensureProviderVersionInstall(ctx, locks, reqs, mode, provider, version, targetPlatform)
+		authResult, err := i.ensureProviderVersionInstall(traceCtx, locks, reqs, mode, provider, version, targetPlatform)
 		if authResult != nil {
 			authResults[provider] = authResult
 		}
 		if err != nil {
 			errs[provider] = err
 		}
+		span.End()
 	}
 	return authResults, nil
 }
@@ -467,6 +482,18 @@ func (i *Installer) ensureProviderVersionInstall(
 	targetPlatform getproviders.Platform,
 ) (*getproviders.PackageAuthenticationResult, error) {
 	evts := installerEventsForContext(ctx)
+
+	// The unlock function may be used if the globalCacheDir is set.  It is unlocked in the *next* iteration of the loop or after the loop exits
+	// We create a file lock per-provider to prevent modification from different processes using the shared global cache
+	// We lock per-provider to prevent deadlocks and release as soon as possible (instead of defer at the function scope)
+	// This is not ideal, but the best option for not generating a large code diff
+	var unlock func()
+	defer func() {
+		if unlock != nil {
+			// Free remaining lock on return
+			unlock()
+		}
+	}()
 
 	lock := locks.Provider(provider)
 	var preferredHashes []getproviders.Hash
@@ -487,6 +514,21 @@ func (i *Installer) ensureProviderVersionInstall(
 	}
 
 	if i.globalCacheDir != nil {
+		// Try to lock the provider's directory.
+		unlockProvider, err := i.globalCacheDir.Lock(ctx, provider, version)
+		if err != nil {
+			if cb := evts.LinkFromCacheFailure; cb != nil {
+				cb(provider, version, err)
+			}
+			return nil, err
+		}
+		unlock = func() {
+			err = unlockProvider()
+			if err != nil {
+				log.Printf("[ERROR] Unable to clear provider lock: %s", err.Error())
+			}
+		}
+
 		// If our global cache already has this version available then
 		// we'll just link it in.
 		installed, err := tryInstallPackageFromCacheDir(
@@ -552,6 +594,13 @@ func (i *Installer) ensureProviderVersionInstall(
 		}
 		return nil, err
 	}
+
+	if unlock != nil {
+		// Early unlock as the write to the globalCacheDir has completed
+		unlock()
+		unlock = nil
+	}
+
 	new := installTo.ProviderVersion(provider, version)
 	if new == nil {
 		err := fmt.Errorf("after installing %s it is still not detected in %s; this is a bug in OpenTofu", provider, installTo.BasePath())

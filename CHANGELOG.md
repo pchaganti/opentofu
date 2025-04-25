@@ -20,6 +20,8 @@ NEW FEATURES:
     - `provider::terraform::encode_expr` - Encode an arbitrary expression into a string with valid OpenTofu syntax.
 - Added support for S3 native locking ([#599](https://github.com/opentofu/opentofu/issues/599))
 - Backend `pg` now allows the `table_name` and `index_name` to be specified. This enables a single database schema to support multiple backends via multiple tables. ([#2465](https://github.com/opentofu/opentofu/pull/2465))
+- Module variables and outputs can now be marked as `deprecated` to indicate their removal in the future. ([#1005](https://github.com/opentofu/opentofu/issues/1005))
+- OpenTelemetry tracing has been added to the `init` command for provider installation. Note: This feature is experimental and subject to change in the future. ([#2665](https://github.com/opentofu/opentofu/pull/2665))
 
 ENHANCEMENTS:
 
@@ -38,6 +40,8 @@ ENHANCEMENTS:
 * Upgrade aws-sdk version to include `mx-central-1` region. ([#2596](https://github.com/opentofu/opentofu/pull/2596))
 * When installing a provider from a source that offers a `.zip` archive of a provider package but that cannot also offer a signed set of official checksums for the provider, OpenTofu will now include its locally-verified zip archive checksum (`zh:` scheme) in the dependency lock file in addition to the package contents checksum (`h1:` checksum) previously recorded. This makes it more likely that a future reinstall of the same package from a different source will be verified successfully. ([#2656](https://github.com/opentofu/opentofu/pull/2656))
 * The `tofu show` command now supports a new explicit and extensible usage style, with `-state` and `-plan=PLANFILE` options. The old style with zero or one positional arguments is still supported for backward-compatibility. ([#2699](https://github.com/opentofu/opentofu/pull/2699))
+* `removed` now supports `lifecycle` and `provisioner` configuration. ([#2556](https://github.com/opentofu/opentofu/issues/2556))
+* "force-unlock" option is now supported by the HTTP backend. ([#2381](https://github.com/opentofu/opentofu/pull/2381))
 
 BUG FIXES:
 
