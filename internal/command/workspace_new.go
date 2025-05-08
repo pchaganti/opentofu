@@ -102,7 +102,7 @@ func (c *WorkspaceNewCommand) Run(args []string) int {
 	// This command will not write state
 	c.ignoreRemoteVersionConflict(b)
 
-	workspaces, err := b.Workspaces()
+	workspaces, err := b.Workspaces(ctx)
 	if err != nil {
 		c.Ui.Error(fmt.Sprintf("Failed to get configured named states: %s", err))
 		return 1
@@ -114,7 +114,7 @@ func (c *WorkspaceNewCommand) Run(args []string) int {
 		}
 	}
 
-	_, err = b.StateMgr(workspace)
+	_, err = b.StateMgr(ctx, workspace)
 	if err != nil {
 		c.Ui.Error(err.Error())
 		return 1
@@ -135,7 +135,7 @@ func (c *WorkspaceNewCommand) Run(args []string) int {
 	}
 
 	// load the new Backend state
-	stateMgr, err := b.StateMgr(workspace)
+	stateMgr, err := b.StateMgr(ctx, workspace)
 	if err != nil {
 		c.Ui.Error(err.Error())
 		return 1

@@ -217,7 +217,7 @@ func (m *Meta) Backend(ctx context.Context, opts *BackendOpts, enc encryption.St
 // if the currently selected workspace is valid. If not, it will ask
 // the user to select a workspace from the list.
 func (m *Meta) selectWorkspace(ctx context.Context, b backend.Backend) error {
-	workspaces, err := b.Workspaces()
+	workspaces, err := b.Workspaces(ctx)
 	if err == backend.ErrWorkspacesNotSupported {
 		return nil
 	}
@@ -328,7 +328,7 @@ func (m *Meta) BackendForLocalPlan(ctx context.Context, settings plans.Backend, 
 		return nil, diags
 	}
 
-	configureDiags := b.Configure(newVal)
+	configureDiags := b.Configure(ctx, newVal)
 	diags = diags.Append(configureDiags)
 	if configureDiags.HasErrors() {
 		return nil, diags
@@ -838,7 +838,7 @@ func (m *Meta) backendFromState(ctx context.Context, enc encryption.StateEncrypt
 		return nil, diags
 	}
 
-	configDiags := b.Configure(newVal)
+	configDiags := b.Configure(ctx, newVal)
 	diags = diags.Append(configDiags)
 	if configDiags.HasErrors() {
 		return nil, diags
@@ -972,7 +972,7 @@ func (m *Meta) backend_C_r_s(ctx context.Context, c *configs.Backend, cHash int,
 		return nil, diags
 	}
 
-	workspaces, err := localB.Workspaces()
+	workspaces, err := localB.Workspaces(ctx)
 	if err != nil {
 		diags = diags.Append(fmt.Errorf(errBackendLocalRead, err))
 		return nil, diags
@@ -980,7 +980,7 @@ func (m *Meta) backend_C_r_s(ctx context.Context, c *configs.Backend, cHash int,
 
 	var localStates []statemgr.Full
 	for _, workspace := range workspaces {
-		localState, err := localB.StateMgr(workspace)
+		localState, err := localB.StateMgr(ctx, workspace)
 		if err != nil {
 			diags = diags.Append(fmt.Errorf(errBackendLocalRead, err))
 			return nil, diags
@@ -1296,7 +1296,7 @@ func (m *Meta) savedBackend(sMgr *clistate.LocalState, enc encryption.StateEncry
 		return nil, diags
 	}
 
-	configDiags := b.Configure(newVal)
+	configDiags := b.Configure(context.TODO(), newVal)
 	diags = diags.Append(configDiags)
 	if configDiags.HasErrors() {
 		return nil, diags
@@ -1441,7 +1441,7 @@ func (m *Meta) backendInitFromConfig(c *configs.Backend, enc encryption.StateEnc
 		return nil, cty.NilVal, diags
 	}
 
-	configureDiags := b.Configure(newVal)
+	configureDiags := b.Configure(context.TODO(), newVal)
 	diags = diags.Append(configureDiags.InConfigBody(c.Config, ""))
 
 	// If the result of loading the backend is an enhanced backend,
