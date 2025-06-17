@@ -128,7 +128,7 @@ func (c *BuiltinEvalContext) Input() UIInput {
 	return c.InputValue
 }
 
-func (c *BuiltinEvalContext) InitProvider(addr addrs.AbsProviderConfig, providerInstanceKey addrs.InstanceKey) (providers.Interface, error) {
+func (c *BuiltinEvalContext) InitProvider(ctx context.Context, addr addrs.AbsProviderConfig, providerInstanceKey addrs.InstanceKey) (providers.Interface, error) {
 	c.ProviderLock.Lock()
 	defer c.ProviderLock.Unlock()
 
@@ -153,7 +153,7 @@ func (c *BuiltinEvalContext) InitProvider(addr addrs.AbsProviderConfig, provider
 		// We cannot wrap providers.Factory itself, because factories don't support aliases.
 		pc, ok := c.Evaluator.Config.Module.GetProviderConfig(addr.Provider.Type, addr.Alias)
 		if ok && pc.IsMocked {
-			testP, err := newProviderForTestWithSchema(p, p.GetProviderSchema(context.TODO()))
+			testP, err := newProviderForTestWithSchema(p, p.GetProviderSchema(ctx))
 			if err != nil {
 				return nil, err
 			}
@@ -170,7 +170,7 @@ func (c *BuiltinEvalContext) InitProvider(addr addrs.AbsProviderConfig, provider
 	return p, nil
 }
 
-func (c *BuiltinEvalContext) Provider(addr addrs.AbsProviderConfig, key addrs.InstanceKey) providers.Interface {
+func (c *BuiltinEvalContext) Provider(_ context.Context, addr addrs.AbsProviderConfig, key addrs.InstanceKey) providers.Interface {
 	c.ProviderLock.Lock()
 	defer c.ProviderLock.Unlock()
 
@@ -188,7 +188,7 @@ func (c *BuiltinEvalContext) ProviderSchema(ctx context.Context, addr addrs.AbsP
 	return c.Plugins.ProviderSchema(ctx, addr.Provider)
 }
 
-func (c *BuiltinEvalContext) CloseProvider(addr addrs.AbsProviderConfig) error {
+func (c *BuiltinEvalContext) CloseProvider(ctx context.Context, addr addrs.AbsProviderConfig) error {
 	c.ProviderLock.Lock()
 	defer c.ProviderLock.Unlock()
 
@@ -198,7 +198,7 @@ func (c *BuiltinEvalContext) CloseProvider(addr addrs.AbsProviderConfig) error {
 	providerMap := c.ProviderCache[providerAddrKey]
 	if providerMap != nil {
 		for _, provider := range providerMap {
-			err := provider.Close(context.TODO())
+			err := provider.Close(ctx)
 			if err != nil {
 				diags = diags.Append(err)
 			}
@@ -212,7 +212,7 @@ func (c *BuiltinEvalContext) CloseProvider(addr addrs.AbsProviderConfig) error {
 	return nil
 }
 
-func (c *BuiltinEvalContext) ConfigureProvider(addr addrs.AbsProviderConfig, providerKey addrs.InstanceKey, cfg cty.Value) tfdiags.Diagnostics {
+func (c *BuiltinEvalContext) ConfigureProvider(ctx context.Context, addr addrs.AbsProviderConfig, providerKey addrs.InstanceKey, cfg cty.Value) tfdiags.Diagnostics {
 	var diags tfdiags.Diagnostics
 	if !c.Path().IsForModule(addr.Module) {
 		// This indicates incorrect use of ConfigureProvider: it should be used
@@ -220,7 +220,7 @@ func (c *BuiltinEvalContext) ConfigureProvider(addr addrs.AbsProviderConfig, pro
 		panic(fmt.Sprintf("%s configured by wrong module %s", addr, c.Path()))
 	}
 
-	p := c.Provider(addr, providerKey)
+	p := c.Provider(ctx, addr, providerKey)
 	if p == nil {
 		diags = diags.Append(fmt.Errorf("%s not initialized", addr.InstanceString(providerKey)))
 		return diags
@@ -231,11 +231,11 @@ func (c *BuiltinEvalContext) ConfigureProvider(addr addrs.AbsProviderConfig, pro
 		Config:           cfg,
 	}
 
-	resp := p.ConfigureProvider(context.TODO(), req)
+	resp := p.ConfigureProvider(ctx, req)
 	return resp.Diagnostics
 }
 
-func (c *BuiltinEvalContext) ProviderInput(pc addrs.AbsProviderConfig) map[string]cty.Value {
+func (c *BuiltinEvalContext) ProviderInput(_ context.Context, pc addrs.AbsProviderConfig) map[string]cty.Value {
 	c.ProviderLock.Lock()
 	defer c.ProviderLock.Unlock()
 
@@ -253,7 +253,7 @@ func (c *BuiltinEvalContext) ProviderInput(pc addrs.AbsProviderConfig) map[strin
 	return c.ProviderInputConfig[pc.String()]
 }
 
-func (c *BuiltinEvalContext) SetProviderInput(pc addrs.AbsProviderConfig, vals map[string]cty.Value) {
+func (c *BuiltinEvalContext) SetProviderInput(_ context.Context, pc addrs.AbsProviderConfig, vals map[string]cty.Value) {
 	absProvider := pc
 	if !pc.Module.IsRoot() {
 		// Only root module provider configurations can have input.
@@ -307,16 +307,16 @@ func (c *BuiltinEvalContext) CloseProvisioners() error {
 func (c *BuiltinEvalContext) EvaluateBlock(body hcl.Body, schema *configschema.Block, self addrs.Referenceable, keyData InstanceKeyEvalData) (cty.Value, hcl.Body, tfdiags.Diagnostics) {
 	var diags tfdiags.Diagnostics
 	scope := c.EvaluationScope(self, nil, keyData)
-	body, evalDiags := scope.ExpandBlock(body, schema)
+	body, evalDiags := scope.ExpandBlock(context.TODO(), body, schema)
 	diags = diags.Append(evalDiags)
-	val, evalDiags := scope.EvalBlock(body, schema)
+	val, evalDiags := scope.EvalBlock(context.TODO(), body, schema)
 	diags = diags.Append(evalDiags)
 	return val, body, diags
 }
 
 func (c *BuiltinEvalContext) EvaluateExpr(expr hcl.Expression, wantType cty.Type, self addrs.Referenceable) (cty.Value, tfdiags.Diagnostics) {
 	scope := c.EvaluationScope(self, nil, EvalDataForNoInstanceKey)
-	return scope.EvalExpr(expr, wantType)
+	return scope.EvalExpr(context.TODO(), expr, wantType)
 }
 
 func (c *BuiltinEvalContext) EvaluateReplaceTriggeredBy(expr hcl.Expression, repData instances.RepetitionData) (*addrs.Reference, bool, tfdiags.Diagnostics) {
@@ -457,7 +457,7 @@ func (c *BuiltinEvalContext) EvaluationScope(self addrs.Referenceable, source ad
 		return c.Evaluator.Scope(data, self, source, nil)
 	}
 
-	scope := c.Evaluator.Scope(data, self, source, func(pf addrs.ProviderFunction, rng tfdiags.SourceRange) (*function.Function, tfdiags.Diagnostics) {
+	scope := c.Evaluator.Scope(data, self, source, func(ctx context.Context, pf addrs.ProviderFunction, rng tfdiags.SourceRange) (*function.Function, tfdiags.Diagnostics) {
 		providedBy, ok := c.ProviderFunctionTracker.Lookup(c.PathValue.Module(), pf)
 		if !ok {
 			// This should not be possible if references are tracked correctly
@@ -483,7 +483,7 @@ func (c *BuiltinEvalContext) EvaluationScope(self addrs.Referenceable, source ad
 			}
 		}
 
-		provider := c.Provider(providedBy.Provider, providerKey)
+		provider := c.Provider(ctx, providedBy.Provider, providerKey)
 
 		if provider == nil {
 			// This should not be possible if references are tracked correctly
@@ -495,7 +495,7 @@ func (c *BuiltinEvalContext) EvaluationScope(self addrs.Referenceable, source ad
 			})
 		}
 
-		return evalContextProviderFunction(provider, c.Evaluator.Operation, pf, rng)
+		return evalContextProviderFunction(ctx, provider, c.Evaluator.Operation, pf, rng)
 	})
 	scope.SetActiveExperiments(mc.Module.ActiveExperiments)
 
