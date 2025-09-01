@@ -41,7 +41,7 @@ jobs:
       - id: diff 
         run: |
           git fetch --no-tags --prune --no-recurse-submodules --depth=1 origin ${{github.event.pull_request.base.ref}}
-          echo "go=$(git diff --name-only origin/${{github.event.pull_request.base.ref}} | grep -e '\.go' -e '\.github' | wc -l)" | tee -a "$GITHUB_OUTPUT"
+          echo "go=$(git diff --name-only origin/${{github.event.pull_request.base.ref}} | grep -e '\.go' -e '\.github' -e 'go\.mod' -e 'go\.sum' -e '\.gitattributes' | wc -l)" | tee -a "$GITHUB_OUTPUT"
     outputs:
       go: ${{ steps.diff.outputs.go }}
     
@@ -149,7 +149,7 @@ jobs:
       - name: "go.mod and go.sum consistency check"
         run: |
           go mod tidy
-          if [[ -n "$(git status --porcelain)" ]]; then
+          if [[ -n "$(git status --porcelain go.mod go.sum)" ]]; then
             echo >&2 "ERROR: go.mod/go.sum are not up-to-date. Run 'go mod tidy' and then commit the updated files."
             exit 1
           fi
