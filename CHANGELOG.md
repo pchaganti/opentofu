@@ -28,10 +28,14 @@ ENHANCEMENTS:
 * Upgrade go from 1.24.4 to 1.24.6 to fix [GO-2025-3849](https://pkg.go.dev/vuln/GO-2025-3849) ([3127](https://github.com/opentofu/opentofu/pull/3127))
 * Improved error messages when a submodule is not found in a module ([#3144]https://github.com/opentofu/opentofu/pull/3144)
 * Add support for the `for_each` attribute in the `mock_provider` block. ([#3087](https://github.com/opentofu/opentofu/pull/3087))
-* Upgrade github.com/openbao/openbao/api/v2 from 2.1.0 to 2.3.0 to fix [GO-2025-3783](https://pkg.go.dev/vuln/GO-2025-3783) ([3134](https://github.com/opentofu/opentofu/pull/3134))
+* Upgrade github.com/openbao/openbao/api/v2 from 2.1.0 to 2.3.0 to fix [GO-2025-3783](https://pkg.go.dev/vuln/GO-2025-3783) ([#3134](https://github.com/opentofu/opentofu/pull/3134))
   * The upgrade is necessary to silence the security scanner and does not affect the actual state encryption provided by OpenBao.
 * Add logs for the DynamoDB operations in the S3 backend ([#3103](https://github.com/opentofu/opentofu/pull/3103))
 * When running the `stty` program to disable or reenable local echo at a sensitive input prompt, OpenTofu will now search `PATH` for the program rather than requiring it to be at exactly `/bin/stty`. ([#3182](https://github.com/opentofu/opentofu/pull/3182))
+* Reduced the CPU and Memory overhead of managing large state files in OpenTofu. ([#3110](https://github.com/opentofu/opentofu/pull/3110))
+  * These improvements are primarilly visible in projects with thousands of resources
+* Upgrade github.com/hashicorp/go-getter to v1.7.9 to fix [GO-2025-3892](https://pkg.go.dev/vuln/GO-2025-3892). ([#3227](https://github.com/opentofu/opentofu/pull/3227))
+* The module installer will copy files in parallel to improve performance of `init` ([#3214](https://github.com/opentofu/opentofu/pull/3214))
 
 BUG FIXES:
 
@@ -45,6 +49,7 @@ BUG FIXES:
 * Variables with validation no longer interfere with the destroy process ([#3131](https://github.com/opentofu/opentofu/pull/3131))
 * Ensure that generated mock values for testing correctly follows the provider schema. ([#3069](https://github.com/opentofu/opentofu/pull/3069))
 * Remote provisioners now reject SSH certificates whose signature key is a certificate key, as required by the current SSH Certificate Format specification draft. ([#3180](https://github.com/opentofu/opentofu/pull/3180))
+* `tofu import` command now correctly validates when the target address contains non-existent for_each key ([#3106](https://github.com/opentofu/opentofu/pull/3106))
 
 BREAKING CHANGES:
 
