@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/hashicorp/hcl/v2"
+	"github.com/zclconf/go-cty-debug/ctydebug"
 	"github.com/zclconf/go-cty/cty"
 
 	"github.com/opentofu/opentofu/internal/addrs"
@@ -169,114 +170,48 @@ func TestHasDeprecated(t *testing.T) {
 	}
 }
 
-func TestUnmarkDeepWithPathsDeprecated(t *testing.T) {
-	tests := []struct {
-		name                      string
-		input                     cty.Value
-		wantDeprecationPathsCount int
-	}{
-		{
-			name:                      "no marks",
-			input:                     cty.StringVal("test"),
-			wantDeprecationPathsCount: 0,
-		},
-		{
-			name: "single deprecation mark",
-			input: Deprecated(cty.StringVal("test"), DeprecationCause{
-				By:      addrs.InputVariable{Name: "var1"},
-				Key:     "var1",
-				Message: "deprecated",
-			}),
-			wantDeprecationPathsCount: 1,
-		},
-		{
-			name: "mixed marks",
-			input: Deprecated(cty.StringVal("test").Mark(Sensitive), DeprecationCause{
-				By:      addrs.InputVariable{Name: "var1"},
-				Key:     "var1",
-				Message: "deprecated",
-			}),
-			wantDeprecationPathsCount: 1,
-		},
-		{
-			name: "multiple fields all of which have only deprecation marks",
-			input: cty.ObjectVal(map[string]cty.Value{
-				"field1": Deprecated(cty.StringVal("test1"), DeprecationCause{
-					By:      addrs.InputVariable{Name: "var1"},
-					Key:     "var1",
-					Message: "deprecated1",
-				}),
-				"field2": Deprecated(cty.StringVal("test2"), DeprecationCause{
-					By:      addrs.InputVariable{Name: "var2"},
-					Key:     "var2",
-					Message: "deprecated2",
-				}),
-				"field3": Deprecated(cty.StringVal("test3"), DeprecationCause{
-					By:      addrs.InputVariable{Name: "var3"},
-					Key:     "var3",
-					Message: "deprecated3",
-				}),
-			}),
-			wantDeprecationPathsCount: 3,
-		},
-		{
-			name: "nested object with deprecation",
-			input: cty.ObjectVal(map[string]cty.Value{
-				"outer": cty.ObjectVal(map[string]cty.Value{
-					"inner": Deprecated(cty.StringVal("nested"), DeprecationCause{
-						By:      addrs.InputVariable{Name: "var1"},
-						Key:     "var1",
-						Message: "deprecated",
-					}),
-				}),
-			}),
-			wantDeprecationPathsCount: 1,
-		},
-		{
-			name: "only non-deprecation marks",
-			input: cty.ObjectVal(map[string]cty.Value{
-				"sensitive": cty.StringVal("secret").Mark(Sensitive),
-				"ephemeral": cty.StringVal("temp").Mark(Ephemeral),
-			}),
-			wantDeprecationPathsCount: 0,
-		},
-		{
-			name: "nested with other marks too",
-			input: cty.ObjectVal(map[string]cty.Value{
-				"outer": cty.ObjectVal(map[string]cty.Value{
-					"deprecated": Deprecated(cty.StringVal("dep"), DeprecationCause{
-						By:      addrs.InputVariable{Name: "var1"},
-						Key:     "var1",
-						Message: "deprecated",
-					}),
-					"sensitive": cty.StringVal("secret").Mark(Sensitive),
-				}),
-			}),
-			wantDeprecationPathsCount: 1,
-		},
+func TestExtractDeprecatedDiagnosticsWithExpr(t *testing.T) {
+	// This is a small unit test focused just on how we detect a deprecation
+	// mark and translate it into a diagnostic message. The main tests for
+	// the overall dynamic deprecation handling are in
+	// [tofu.TestContext2Apply_deprecationWarnings].
+
+	input := cty.ObjectVal(map[string]cty.Value{
+		"okay": cty.StringVal("not deprecated").Mark(Sensitive),
+		"warn": DeprecatedOutput(
+			cty.StringVal("deprecated"),
+			addrs.OutputValue{Name: "foo"}.Absolute(addrs.RootModuleInstance.Child("child", addrs.StringKey("beep"))),
+			"Blah blah blah don't use this!",
+			false,
+		),
+	})
+	got, gotDiags := ExtractDeprecatedDiagnosticsWithExpr(
+		input,
+		// This expression is used just for its source location information.
+		hcl.StaticExpr(cty.DynamicVal, hcl.Range{Filename: "test.tofu"}),
+	)
+	want := cty.ObjectVal(map[string]cty.Value{
+		"okay": cty.StringVal("not deprecated").Mark(Sensitive), // non-deprecation marks should be preserved
+		"warn": cty.StringVal("deprecated"),                     // deprecation marks are removed
+	})
+	if diff := cmp.Diff(want, got, ctydebug.CmpOptions); diff != "" {
+		t.Error("wrong result value\n" + diff)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			gotUnmarked, gotDeprecationMarks := unmarkDeepWithPathsDeprecated(tt.input)
-
-			if len(gotDeprecationMarks) != tt.wantDeprecationPathsCount {
-				t.Errorf("deprecation marks count mismatch\ngot:  %d\nwant: %d", len(gotDeprecationMarks), tt.wantDeprecationPathsCount)
-			}
-
-			// Verify that the returned value has NO deprecation marks
-			if HasDeprecated(gotUnmarked) {
-				t.Error("returned value still contains deprecation marks")
-			}
-
-			// Verify all deprecation marks returned only contain deprecation marks
-			for _, pm := range gotDeprecationMarks {
-				for m := range pm.Marks {
-					if _, ok := m.(deprecationMark); !ok {
-						t.Errorf("found non-deprecation mark in deprecation marks: %T", m)
-					}
-				}
-			}
-		})
+	// We'll use the "ForRPC" representation of diagnostics just because it
+	// compares well with cmp. We don't actually care what type of diagnostic
+	// is returned here, only that it has the expected content.
+	gotDiags = gotDiags.ForRPC()
+	var wantDiags tfdiags.Diagnostics
+	wantDiags = wantDiags.Append(&hcl.Diagnostic{
+		Severity: hcl.DiagWarning,
+		Summary:  "Value derived from a deprecated source",
+		Detail:   "This value's attribute warn is derived from module.child[\"beep\"].foo, which is deprecated with the following message:\n\nBlah blah blah don't use this!",
+		Subject:  &hcl.Range{Filename: "test.tofu"}, // source location should come from the given expression
+	})
+	wantDiags = wantDiags.ForRPC()
+	if diff := cmp.Diff(wantDiags, gotDiags); diff != "" {
+		t.Error("wrong diagnostics\n" + diff)
 	}
+
 }
