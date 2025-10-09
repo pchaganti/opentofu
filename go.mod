@@ -47,10 +47,10 @@ require (
 	github.com/hashicorp/copywrite v0.16.3
 	github.com/hashicorp/errwrap v1.1.0
 	github.com/hashicorp/go-cleanhttp v0.5.2
-	github.com/hashicorp/go-getter v1.8.0
+	github.com/hashicorp/go-getter v1.8.2
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/go-multierror v1.1.1
-	github.com/hashicorp/go-plugin v1.4.3
+	github.com/hashicorp/go-plugin v1.7.0
 	github.com/hashicorp/go-retryablehttp v0.7.7
 	github.com/hashicorp/go-tfe v1.53.0
 	github.com/hashicorp/go-uuid v1.0.3
@@ -103,7 +103,7 @@ require (
 	golang.org/x/net v0.43.0
 	golang.org/x/oauth2 v0.30.0
 	golang.org/x/sync v0.16.0
-	golang.org/x/sys v0.35.0
+	golang.org/x/sys v0.37.0
 	golang.org/x/term v0.34.0
 	golang.org/x/text v0.28.0
 	golang.org/x/tools v0.35.0
@@ -208,7 +208,6 @@ require (
 	github.com/hashicorp/go-immutable-radix v1.0.0 // indirect
 	github.com/hashicorp/go-msgpack v0.5.4 // indirect
 	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
-	github.com/hashicorp/go-safetemp v1.0.0 // indirect
 	github.com/hashicorp/go-secure-stdlib/parseutil v0.2.0 // indirect
 	github.com/hashicorp/go-secure-stdlib/strutil v0.1.2 // indirect
 	github.com/hashicorp/go-slug v0.16.3 // indirect
@@ -216,7 +215,7 @@ require (
 	github.com/hashicorp/golang-lru v0.5.1 // indirect
 	github.com/hashicorp/serf v0.9.6 // indirect
 	github.com/hashicorp/terraform-plugin-log v0.9.0 // indirect
-	github.com/hashicorp/yamux v0.0.0-20181012175058-2f1d1f20f75d // indirect
+	github.com/hashicorp/yamux v0.1.2 // indirect
 	github.com/henvic/httpretty v0.0.6 // indirect
 	github.com/huandu/xstrings v1.3.3 // indirect
 	github.com/imdario/mergo v0.3.13 // indirect
@@ -242,7 +241,7 @@ require (
 	github.com/mozillazg/go-httpheader v0.3.0 // indirect
 	github.com/muesli/termenv v0.12.0 // indirect
 	github.com/nu7hatch/gouuid v0.0.0-20131221200532-179d4d0c4d8d // indirect
-	github.com/oklog/run v1.0.0 // indirect
+	github.com/oklog/run v1.1.0 // indirect
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/rivo/uniseg v0.2.0 // indirect
 	github.com/ryanuber/go-glob v1.0.0 // indirect
@@ -283,6 +282,6 @@ require (
 	sigs.k8s.io/yaml v1.2.0 // indirect
 )
 
-go 1.25.0
+go 1.25.2
 
 replace github.com/hashicorp/hcl/v2 v2.20.1 => github.com/opentofu/hcl/v2 v2.20.2-0.20250121132637-504036cd70e7
