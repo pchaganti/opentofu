@@ -21,7 +21,7 @@ require (
 	github.com/apparentlymart/go-cidr v1.1.0
 	github.com/apparentlymart/go-shquot v0.0.1
 	github.com/apparentlymart/go-userdirs v0.0.0-20200915174352-b0c018a67c13
-	github.com/apparentlymart/go-versions v1.0.2
+	github.com/apparentlymart/go-versions v1.0.3
 	github.com/armon/circbuf v0.0.0-20190214190532-5111143e8da2
 	github.com/aws/aws-sdk-go-v2 v1.36.3
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.16.30
@@ -51,10 +51,10 @@ require (
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hashicorp/go-plugin v1.7.0
-	github.com/hashicorp/go-retryablehttp v0.7.7
+	github.com/hashicorp/go-retryablehttp v0.7.8
 	github.com/hashicorp/go-tfe v1.53.0
 	github.com/hashicorp/go-uuid v1.0.3
-	github.com/hashicorp/go-version v1.6.0
+	github.com/hashicorp/go-version v1.7.0
 	github.com/hashicorp/hcl v1.0.1-vault-5
 	github.com/hashicorp/hcl/v2 v2.20.1
 	github.com/hashicorp/jsonapi v1.5.0
@@ -63,7 +63,7 @@ require (
 	github.com/lib/pq v1.10.3
 	github.com/masterzen/winrm v0.0.0-20200615185753-c42b5136ff88
 	github.com/mattn/go-isatty v0.0.20
-	github.com/mattn/go-shellwords v1.0.4
+	github.com/mattn/go-shellwords v1.0.12
 	github.com/mitchellh/cli v1.1.5
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
 	github.com/mitchellh/copystructure v1.2.0
@@ -86,7 +86,7 @@ require (
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sts v1.0.587-0.20230206000712-97469a3dcd4e
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/tag v1.0.233-0.20210823002710-8078545fa058
 	github.com/tencentyun/cos-go-sdk-v5 v0.7.29
-	github.com/xanzy/ssh-agent v0.3.1
+	github.com/xanzy/ssh-agent v0.3.3
 	github.com/xlab/treeprint v1.2.0
 	github.com/zclconf/go-cty v1.17.0
 	github.com/zclconf/go-cty-debug v0.0.0-20240509010212-0d6042c53940
@@ -98,10 +98,9 @@ require (
 	go.opentelemetry.io/otel/trace v1.38.0
 	go.uber.org/mock v0.4.0
 	golang.org/x/crypto v0.41.0
-	golang.org/x/exp v0.0.0-20230905200255-921286631fa9
 	golang.org/x/mod v0.26.0
 	golang.org/x/net v0.43.0
-	golang.org/x/oauth2 v0.30.0
+	golang.org/x/oauth2 v0.32.0
 	golang.org/x/sync v0.17.0
 	golang.org/x/sys v0.37.0
 	golang.org/x/term v0.36.0
@@ -129,6 +128,7 @@ require (
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/stretchr/objx v0.5.2 // indirect
+	golang.org/x/exp v0.0.0-20230905200255-921286631fa9 // indirect
 )
 
 require (
@@ -152,7 +152,7 @@ require (
 	github.com/Masterminds/goutils v1.1.1 // indirect
 	github.com/Masterminds/semver/v3 v3.1.1 // indirect
 	github.com/Masterminds/sprig/v3 v3.2.2 // indirect
-	github.com/Microsoft/go-winio v0.5.0 // indirect
+	github.com/Microsoft/go-winio v0.5.2 // indirect
 	github.com/antchfx/xmlquery v1.3.5 // indirect
 	github.com/antchfx/xpath v1.1.10 // indirect
 	github.com/apparentlymart/go-textseg/v15 v15.0.0 // indirect
