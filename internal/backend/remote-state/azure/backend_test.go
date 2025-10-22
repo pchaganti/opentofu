@@ -207,11 +207,11 @@ func TestAccBackendAccessKeyBasic(t *testing.T) {
 	rs := acctest.RandString(4)
 	res := testResourceNames(rs, "testState")
 
-	authMethod, err := auth.GetAuthMethod(t.Context(), emptyAuthConfig())
+	authMethod, err := auth.GetAuthMethod(t.Context(), testAuthConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
-	authCred, err := authMethod.Construct(t.Context(), emptyAuthConfig())
+	authCred, err := authMethod.Construct(t.Context(), testAuthConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,11 +254,11 @@ func TestAccBackendSASToken(t *testing.T) {
 	rs := acctest.RandString(4)
 	res := testResourceNames(rs, "testState")
 
-	authMethod, err := auth.GetAuthMethod(t.Context(), emptyAuthConfig())
+	authMethod, err := auth.GetAuthMethod(t.Context(), testAuthConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
-	authCred, err := authMethod.Construct(t.Context(), emptyAuthConfig())
+	authCred, err := authMethod.Construct(t.Context(), testAuthConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -310,21 +310,21 @@ func TestAccBackendServicePrincipalClientSecret(t *testing.T) {
 	res := testResourceNames(rs, "testState")
 
 	client_id := os.Getenv("TF_AZURE_TEST_CLIENT_ID")
-	client_secret := os.Getenv("TF_AZURE_TEST_SECRET")
+	client_secret := os.Getenv("TF_AZURE_TEST_CLIENT_SECRET")
 	if client_id == "" || client_secret == "" {
 		t.Skip(`
 A client ID or client secret was not provided.
-Please set TF_AZURE_TEST_CLIENT_ID and TF_AZURE_TEST_SECRET, either manually or using the terraform plan in the meta-test folder.`)
+Please set TF_AZURE_TEST_CLIENT_ID and TF_AZURE_TEST_CLIENT_SECRET, either manually or using the terraform plan in the meta-test folder.`)
 	}
 	if res.tenantID == "" {
 		t.Fatal(errors.New("A tenant ID must be provided through ARM_TENANT_ID in order to run this test."))
 	}
 
-	authMethod, err := auth.GetAuthMethod(t.Context(), emptyAuthConfig())
+	authMethod, err := auth.GetAuthMethod(t.Context(), testAuthConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
-	authCred, err := authMethod.Construct(t.Context(), emptyAuthConfig())
+	authCred, err := authMethod.Construct(t.Context(), testAuthConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -387,11 +387,11 @@ func TestAccBackendServicePrincipalClientCertificate(t *testing.T) {
 	}
 	cert_file.Close()
 
-	authMethod, err := auth.GetAuthMethod(t.Context(), emptyAuthConfig())
+	authMethod, err := auth.GetAuthMethod(t.Context(), testAuthConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
-	authCred, err := authMethod.Construct(t.Context(), emptyAuthConfig())
+	authCred, err := authMethod.Construct(t.Context(), testAuthConfig())
 	if err != nil {
 		t.Fatal(err)
 	}
