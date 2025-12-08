@@ -21,7 +21,7 @@ import (
 
 func (c *compiler) compileOpManagedFinalPlan(operands *compilerOperands) nodeExecuteRaw {
 	getDesired := nextOperand[*eval.DesiredResourceInstance](operands)
-	getPrior := nextOperand[*states.ResourceInstanceObject](operands)
+	getPrior := nextOperand[*states.ResourceInstanceObjectFull](operands)
 	getInitialPlanned := nextOperand[cty.Value](operands)
 	getProviderClient := nextOperand[providers.Configured](operands)
 	waitForDeps := operands.OperandWaiter()
@@ -71,14 +71,14 @@ func (c *compiler) compileOpManagedFinalPlan(operands *compilerOperands) nodeExe
 		var resourceTypeName string
 		if desired != nil {
 			resourceTypeName = desired.Addr.Resource.Resource.Type
+		} else if prior != nil {
+			resourceTypeName = prior.ResourceType
 		} else {
-			// FIXME: We don't haave anywhere to get the resource type name from
-			// if the resource instance is not desired. This is one of the
-			// annoyances of using our existing states.ResourceInstanceObject
-			// model, since it was designed to be used by callers that also have
-			// access to the rest of the state data structure that would've
-			// indicated which resource instance the object belongs to.
-			resourceTypeName = "<FIXME: no resource type available!>"
+			// Should not get here: there's no reason to be applying changes
+			// for a resource instance that has neither a desired state nor
+			// a prior state.
+			diags = diags.Append(fmt.Errorf("attempting to apply final plan for resource instance that has neither desired nor prior state (this is a bug in OpenTofu)"))
+			return nil, false, diags
 		}
 
 		req := providers.PlanResourceChangeRequest{
@@ -178,10 +178,15 @@ func (c *compiler) compileOpManagedApplyChanges(operands *compilerOperands) node
 		// directly, which is annoying since it would be nice if that were all
 		// encapsulated away somewhere.
 
-		ret := &states.ResourceInstanceObject{
+		ret := &states.ResourceInstanceObjectFull{
 			Value:   resp.NewState,
 			Private: resp.Private,
 			Status:  states.ObjectReady,
+			// TODO: ProviderInstanceAddr, which we don't currently have here
+			// because we're just holding an already-open client for that
+			// provider. Should we extend [providers.Interface] with a method
+			// to find which provider instance the client is acting on behalf of?
+			ResourceType: finalPlan.ResourceType,
 			// TODO: Dependencies ... they come from the "desired" object
 			// so maybe we should send that whole thing over here instead of
 			// just the ConfigVal?
