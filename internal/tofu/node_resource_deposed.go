@@ -196,9 +196,9 @@ func (n *NodePlanDeposedResourceInstanceObject) Execute(ctx context.Context, eva
 			log.Printf("[DEBUG] NodePlanDeposedResourceInstanceObject.Execute: %s (deposed %s) planning forget instead of destroy", n.Addr, n.DeposedKey)
 			change = n.planForget(ctx, evalCtx, state, n.DeposedKey)
 			if skipDestroy {
-				change.ActionReason = plans.ResourceInstanceForgotBecauseOfLifecycleDestroyInConfig
+				change.ActionReason = plans.ResourceInstanceForgotBecauseLifecycleDestroyInConfig
 			} else if state.SkipDestroy {
-				change.ActionReason = plans.ResourceInstanceForgotBecauseOfLifecycleDestroyInState
+				change.ActionReason = plans.ResourceInstanceForgotBecauseLifecycleDestroyInState
 			}
 		}
 
@@ -386,7 +386,7 @@ func (n *NodeDestroyDeposedResourceInstanceObject) writeResourceInstanceState(ct
 		return nil
 	}
 
-	_, providerSchema, err := getProvider(ctx, evalCtx, n.ResolvedProvider.ProviderConfig, n.ResolvedProviderKey)
+	_, providerSchema, err := n.getProvider(ctx, evalCtx)
 	if err != nil {
 		return err
 	}

@@ -136,7 +136,7 @@ func (n *NodePlannableResourceInstance) dataResourceExecute(ctx context.Context,
 
 	var change *plans.ResourceInstanceChange
 
-	_, providerSchema, err := getProvider(ctx, evalCtx, n.ResolvedProvider.ProviderConfig, n.ResolvedProviderKey)
+	_, providerSchema, err := n.getProvider(ctx, evalCtx)
 	diags = diags.Append(err)
 	if diags.HasErrors() {
 		return diags
@@ -191,7 +191,7 @@ func (n *NodePlannableResourceInstance) ephemeralResourceExecute(ctx context.Con
 	config := n.Config
 	addr := n.ResourceInstanceAddr()
 
-	_, providerSchema, err := getProvider(ctx, evalCtx, n.ResolvedProvider.ProviderConfig, n.ResolvedProviderKey)
+	_, providerSchema, err := n.getProvider(ctx, evalCtx)
 	diags = diags.Append(err)
 	if diags.HasErrors() {
 		return diags
@@ -251,7 +251,7 @@ func (n *NodePlannableResourceInstance) managedResourceExecute(ctx context.Conte
 		checkRuleSeverity = tfdiags.Warning
 	}
 
-	provider, providerSchema, err := getProvider(ctx, evalCtx, n.ResolvedProvider.ProviderConfig, n.ResolvedProviderKey)
+	provider, providerSchema, err := n.getProvider(ctx, evalCtx)
 	diags = diags.Append(err)
 	if diags.HasErrors() {
 		return diags
@@ -351,7 +351,7 @@ func (n *NodePlannableResourceInstance) managedResourceExecute(ctx context.Conte
 	// The import process handles its own refresh
 	if !n.skipRefresh && !importing {
 		s, refreshDiags := n.refresh(ctx, evalCtx, states.NotDeposed, instanceRefreshState)
-		diags = diags.Append(maybeImproveResourceInstanceDiagnostics(refreshDiags, addr))
+		diags = diags.Append(refreshDiags)
 		if diags.HasErrors() {
 			return diags
 		}
@@ -389,7 +389,7 @@ func (n *NodePlannableResourceInstance) managedResourceExecute(ctx context.Conte
 		change, instancePlanState, repeatData, planDiags := n.plan(
 			ctx, evalCtx, nil, instanceRefreshState, n.ForceCreateBeforeDestroy, n.forceReplace,
 		)
-		diags = diags.Append(maybeImproveResourceInstanceDiagnostics(planDiags, addr))
+		diags = diags.Append(planDiags)
 		if diags.HasErrors() {
 			// If we are importing and generating a configuration, we need to
 			// ensure the change is written out so the configuration can be
