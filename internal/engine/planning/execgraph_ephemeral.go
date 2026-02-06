@@ -6,11 +6,11 @@
 package planning
 
 import (
-	"context"
+	"github.com/zclconf/go-cty/cty"
 
+	"github.com/opentofu/opentofu/internal/engine/internal/exec"
 	"github.com/opentofu/opentofu/internal/engine/internal/execgraph"
 	"github.com/opentofu/opentofu/internal/lang/eval"
-	"github.com/zclconf/go-cty/cty"
 )
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -29,9 +29,7 @@ import (
 // originally written inline in [planGlue.planDesiredEphemeralResourceInstance]
 // just to preserve the existing functionality for now until we design a more
 // complete approach in later work.
-func (b *execGraphBuilder) EphemeralResourceInstanceSubgraph(ctx context.Context, desired *eval.DesiredResourceInstance, plannedValue cty.Value, oracle *eval.PlanningOracle) execgraph.ResourceInstanceResultRef {
-	providerClientRef, closeProviderAfter := b.ProviderInstance(ctx, *desired.ProviderInstance, oracle)
-
+func (b *execGraphBuilder) EphemeralResourceInstanceSubgraph(desired *eval.DesiredResourceInstance, plannedValue cty.Value, providerClientRef execgraph.ResultRef[*exec.ProviderClient]) execgraph.ResourceInstanceResultRef {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -53,7 +51,6 @@ func (b *execGraphBuilder) EphemeralResourceInstanceSubgraph(ctx context.Context
 	closeRef := b.lower.EphemeralClose(openRef, closeWait)
 
 	closeDependencyAfter(closeRef)
-	closeProviderAfter(closeRef)
 
 	return stateRef
 }

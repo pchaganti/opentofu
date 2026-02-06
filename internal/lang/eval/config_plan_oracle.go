@@ -7,12 +7,8 @@ package eval
 
 import (
 	"context"
-	"iter"
-
-	"github.com/zclconf/go-cty/cty"
 
 	"github.com/opentofu/opentofu/internal/addrs"
-	"github.com/opentofu/opentofu/internal/lang/eval/internal/configgraph"
 	"github.com/opentofu/opentofu/internal/lang/eval/internal/evalglue"
 	"github.com/opentofu/opentofu/internal/lang/grapheval"
 )
@@ -41,7 +37,7 @@ type PlanningOracle struct {
 // others need to be deferred to a later plan/apply round.
 //
 // If the requested provider instance does not exist in the configuration at
-// all then this will return [cty.NilVal]. That should not occur for any
+// all then this will return nil. That should not occur for any
 // provider instance address reported by this package as part of the same
 // planning phase, but could occur in subsequent work done by the planning
 // phase to deal with resource instances that are in prior state but no longer
@@ -49,27 +45,26 @@ type PlanningOracle struct {
 // the desired state at the same time. In that case the planning phase must
 // report that the "orphaned" resource instance cannot be planned for deletion
 // unless its provider instance is re-added to the configuration.
-func (o *PlanningOracle) ProviderInstanceConfig(ctx context.Context, addr addrs.AbsProviderInstanceCorrect) cty.Value {
-	ctx = grapheval.ContextWithNewWorker(ctx)
-
-	providerInst := evalglue.ProviderInstance(ctx, o.rootModuleInstance, addr)
-	if providerInst == nil {
-		return cty.NilVal
-	}
-	// We ignore diagnostics here because the CheckAll tree walk should collect
-	// them when it visits the provider instance, th
-	ret, _ := providerInst.ConfigValue(ctx)
-	return ret
-}
-
-func (o *PlanningOracle) ProviderInstanceResourceDependencies(ctx context.Context, addr addrs.AbsProviderInstanceCorrect) iter.Seq[*configgraph.ResourceInstance] {
+func (o *PlanningOracle) ProviderInstanceConfig(ctx context.Context, addr addrs.AbsProviderInstanceCorrect) *ProviderInstanceConfig {
 	ctx = grapheval.ContextWithNewWorker(ctx)
 
 	providerInst := evalglue.ProviderInstance(ctx, o.rootModuleInstance, addr)
 	if providerInst == nil {
 		return nil
 	}
-	return providerInst.ResourceInstanceDependencies(ctx)
+	// We ignore diagnostics here because the CheckAll tree walk should collect
+	// them when it visits the provider instance, and so they'll emerge through
+	// a different path.
+	configVal, _ := providerInst.ConfigValue(ctx)
+	requiredResourceInstAddrs := addrs.MakeSet[addrs.AbsResourceInstance]()
+	for resourceInst := range providerInst.ResourceInstanceDependencies(ctx) {
+		requiredResourceInstAddrs.Add(resourceInst.Addr)
+	}
+	return &ProviderInstanceConfig{
+		Addr:                      addr,
+		ConfigVal:                 configVal,
+		RequiredResourceInstances: requiredResourceInstAddrs,
+	}
 }
 
 func (o *PlanningOracle) EvalContext(ctx context.Context) *EvalContext {

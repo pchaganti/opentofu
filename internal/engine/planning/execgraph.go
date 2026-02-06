@@ -91,7 +91,8 @@ type registerExecCloseBlockerFunc func(execgraph.AnyResultRef)
 // makeCloseBlocker is a helper used by [execGraphBuilder] methods that produce
 // open/close node pairs.
 //
-// Callers MUST hold a lock on b.mu throughout any call to this method.
+// Callers MUST hold a lock on b.mu throughout any call to this method, AND
+// when calling the returned registerExecCloseBlockerFunc.
 func (b *execGraphBuilder) makeCloseBlocker() (execgraph.AnyResultRef, registerExecCloseBlockerFunc) {
 	waiter, lowerRegister := b.lower.MutableWaiter()
 	registerFunc := registerExecCloseBlockerFunc(func(ref execgraph.AnyResultRef) {
