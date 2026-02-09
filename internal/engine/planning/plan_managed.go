@@ -13,6 +13,7 @@ import (
 	"github.com/zclconf/go-cty/cty"
 
 	"github.com/opentofu/opentofu/internal/addrs"
+	"github.com/opentofu/opentofu/internal/engine/internal/exec"
 	"github.com/opentofu/opentofu/internal/engine/internal/execgraph"
 	"github.com/opentofu/opentofu/internal/lang/eval"
 	"github.com/opentofu/opentofu/internal/plans"
@@ -198,6 +199,16 @@ func (p *planGlue) planDesiredManagedResourceInstance(ctx context.Context, inst 
 	// that case, but we would need to mark it as deferred and _not_ record a
 	// proposed change for it.
 
+	if eq, _ := planResp.PlannedState.Equals(refreshedVal).Unmark(); !eq.IsKnown() || eq.True() {
+		// There is no change to make, so we can return early without adding
+		// anything to the graph at all. There will be items in the execgraph
+		// for this node only if some other resource instance or provider
+		// instance depends on our result, in which case an op to read the
+		// prior state should get implicitly added to the graph during the
+		// handling of that downstream thing.
+		return refreshedVal, execgraph.NilResultRef[*exec.ResourceInstanceObject](), diags
+	}
+
 	plannedAction := plans.Update
 	if prevRoundState == nil {
 		plannedAction = plans.Create
@@ -259,7 +270,13 @@ func (p *planGlue) planDesiredManagedResourceInstance(ctx context.Context, inst 
 	// and reasonable. In particular, these subgraph-building methods should
 	// be easily unit-testable due to not depending on anything other than
 	// their input.
-	finalResultRef := p.managedResourceInstanceExecSubgraph(ctx, inst, planResp.PlannedState, egb)
+	finalResultRef := p.managedResourceInstanceExecSubgraph(
+		ctx,
+		plannedChange,
+		inst.ProviderInstance,
+		inst.RequiredResourceInstances,
+		egb,
+	)
 
 	// Our result value for ongoing downstream planning is the planned new state.
 	return planResp.PlannedState, finalResultRef, diags
@@ -284,9 +301,29 @@ func (p *planGlue) planDeposedManagedResourceInstanceObject(ctx context.Context,
 // which implicitly adds execgraph items needed for the resource instance's
 // provider instance, which requires some information that an [execGraphBuilder]
 // instance cannot access directly itself.
-func (p *planGlue) managedResourceInstanceExecSubgraph(ctx context.Context, inst *eval.DesiredResourceInstance, plannedValue cty.Value, egb *execGraphBuilder) execgraph.ResourceInstanceResultRef {
-	providerClientRef, registerProviderCloseBlocker := p.ensureProviderInstanceExecgraph(ctx, inst.ProviderInstance, egb)
-	finalResultRef := egb.ManagedResourceInstanceSubgraph(inst, plannedValue, providerClientRef)
+//
+// Note that a nil pointer for providerInstAddr is currently how we represent
+// that we don't know which provider instance address to use. We'll hopefully
+// do something clearer than that in future; refer to related FIXME comments in
+// [planGlue.ensureProviderInstanceExecgraph] for more information.
+// TODO: remove this paragraph once we've switched to a better representation.
+//
+// FIXME: Because we're currently still using our old model for describing
+// planned changes, we need to bring a little extra baggage alongside the
+// change object in our arguments here. As we start to design a new model
+// for describing planned changes in future we should aspire for this function
+// to take only (ctx, plannedChange, egb) as arguments and have the
+// plannedChange object be a self-contained representation of everything needed
+// to make the graph-building decisions.
+func (p *planGlue) managedResourceInstanceExecSubgraph(
+	ctx context.Context,
+	plannedChange *plans.ResourceInstanceChange,
+	providerInstAddr *addrs.AbsProviderInstanceCorrect,
+	requiredResourceInstances addrs.Set[addrs.AbsResourceInstance],
+	egb *execGraphBuilder,
+) execgraph.ResourceInstanceResultRef {
+	providerClientRef, registerProviderCloseBlocker := p.ensureProviderInstanceExecgraph(ctx, providerInstAddr, egb)
+	finalResultRef := egb.ManagedResourceInstanceSubgraph(plannedChange, providerClientRef, requiredResourceInstances)
 	registerProviderCloseBlocker(finalResultRef)
 	return finalResultRef
 }

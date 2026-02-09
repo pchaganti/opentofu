@@ -192,6 +192,7 @@ func (c *compiler) compileOpManagedApply(operands *compilerOperands) nodeExecute
 	getFinalPlan := nextOperand[*exec.ManagedResourceObjectFinalPlan](operands)
 	getFallback := nextOperand[*exec.ResourceInstanceObject](operands)
 	getProviderClient := nextOperand[*exec.ProviderClient](operands)
+	waitForDeps := operands.OperandWaiter()
 	diags := operands.Finish()
 	c.diags = c.diags.Append(diags)
 	if diags.HasErrors() {
@@ -201,6 +202,9 @@ func (c *compiler) compileOpManagedApply(operands *compilerOperands) nodeExecute
 
 	return func(ctx context.Context) (any, bool, tfdiags.Diagnostics) {
 		var diags tfdiags.Diagnostics
+		if !waitForDeps(ctx) {
+			return nil, false, diags
+		}
 		providerClient, ok, moreDiags := getProviderClient(ctx)
 		diags = diags.Append(moreDiags)
 		if !ok {
@@ -274,6 +278,36 @@ func (c *compiler) compileOpManagedAlreadyDeposed(operands *compilerOperands) no
 		}
 
 		ret, moreDiags := ops.ManagedAlreadyDeposed(ctx, instAddr, deposedKey)
+		diags = diags.Append(moreDiags)
+		return ret, !diags.HasErrors(), diags
+	}
+}
+
+func (c *compiler) compileOpManagedChangeAddr(operands *compilerOperands) nodeExecuteRaw {
+	ops := c.ops
+	getCurrentInstAddr := nextOperand[addrs.AbsResourceInstance](operands)
+	getNewInstAddr := nextOperand[addrs.AbsResourceInstance](operands)
+	diags := operands.Finish()
+	c.diags = c.diags.Append(diags)
+	if diags.HasErrors() {
+		return nil
+	}
+
+	return func(ctx context.Context) (any, bool, tfdiags.Diagnostics) {
+		var diags tfdiags.Diagnostics
+
+		currentInstAddr, ok, moreDiags := getCurrentInstAddr(ctx)
+		diags = diags.Append(moreDiags)
+		if !ok {
+			return nil, false, diags
+		}
+		newInstAddr, ok, moreDiags := getNewInstAddr(ctx)
+		diags = diags.Append(moreDiags)
+		if !ok {
+			return nil, false, diags
+		}
+
+		ret, moreDiags := ops.ManagedChangeAddr(ctx, currentInstAddr, newInstAddr)
 		diags = diags.Append(moreDiags)
 		return ret, !diags.HasErrors(), diags
 	}

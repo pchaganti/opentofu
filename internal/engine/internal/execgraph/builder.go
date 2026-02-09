@@ -13,6 +13,7 @@ import (
 	"github.com/opentofu/opentofu/internal/addrs"
 	"github.com/opentofu/opentofu/internal/engine/internal/exec"
 	"github.com/opentofu/opentofu/internal/lang/eval"
+	"github.com/opentofu/opentofu/internal/states"
 )
 
 // Builder is a helper for gradually constructing an execution graph.
@@ -72,6 +73,14 @@ func (b *Builder) ConstantValue(v cty.Value) ResultRef[cty.Value] {
 func (b *Builder) ConstantResourceInstAddr(addr addrs.AbsResourceInstance) ResultRef[addrs.AbsResourceInstance] {
 	idx := appendIndex(&b.graph.resourceInstAddrs, addr)
 	ret := resourceInstAddrResultRef{idx}
+	return ret
+}
+
+// ConstantDeposedKey adds a constant [states.DeposedKey] as a source node.
+// The result can be used as an operand to a subsequent operation.
+func (b *Builder) ConstantDeposedKey(key states.DeposedKey) ResultRef[states.DeposedKey] {
+	idx := appendIndex(&b.graph.deposedKeys, key)
+	ret := deposedKeyResultRef{idx}
 	return ret
 }
 
@@ -175,10 +184,11 @@ func (b *Builder) ManagedApply(
 	finalPlan ResultRef[*exec.ManagedResourceObjectFinalPlan],
 	fallbackObj ResourceInstanceResultRef,
 	providerClient ResultRef[*exec.ProviderClient],
+	waitFor AnyResultRef,
 ) ResourceInstanceResultRef {
 	return operationRef[*exec.ResourceInstanceObject](b, operationDesc{
 		opCode:   opManagedApply,
-		operands: []AnyResultRef{finalPlan, fallbackObj, providerClient},
+		operands: []AnyResultRef{finalPlan, fallbackObj, providerClient, waitFor},
 	})
 }
 
@@ -193,10 +203,21 @@ func (b *Builder) ManagedDepose(
 
 func (b *Builder) ManagedAlreadyDeposed(
 	instAddr ResultRef[addrs.AbsResourceInstance],
+	deposedKey ResultRef[states.DeposedKey],
 ) ResourceInstanceResultRef {
 	return operationRef[*exec.ResourceInstanceObject](b, operationDesc{
 		opCode:   opManagedAlreadyDeposed,
-		operands: []AnyResultRef{instAddr},
+		operands: []AnyResultRef{instAddr, deposedKey},
+	})
+}
+
+func (b *Builder) ManagedChangeAddr(
+	currentInstAddr ResultRef[addrs.AbsResourceInstance],
+	newInstAddr ResultRef[addrs.AbsResourceInstance],
+) ResourceInstanceResultRef {
+	return operationRef[*exec.ResourceInstanceObject](b, operationDesc{
+		opCode:   opManagedChangeAddr,
+		operands: []AnyResultRef{currentInstAddr, newInstAddr},
 	})
 }
 
