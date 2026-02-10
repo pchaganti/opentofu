@@ -22,6 +22,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/hashicorp/go-version"
 	"github.com/mitchellh/cli"
+	"github.com/opentofu/opentofu/internal/command/flags"
+	"github.com/opentofu/opentofu/internal/command/workdir"
 	"github.com/zclconf/go-cty/cty"
 
 	"github.com/opentofu/opentofu/internal/addrs"
@@ -46,6 +48,7 @@ func TestInit_empty(t *testing.T) {
 	view, _ := testView(t)
 	c := &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(testProvider()),
 			Ui:               ui,
 			View:             view,
@@ -67,6 +70,7 @@ func TestInit_multipleArgs(t *testing.T) {
 	view, _ := testView(t)
 	c := &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(testProvider()),
 			Ui:               ui,
 			View:             view,
@@ -91,6 +95,7 @@ func TestInit_fromModule_cwdDest(t *testing.T) {
 	view, _ := testView(t)
 	c := &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(testProvider()),
 			Ui:               ui,
 			View:             view,
@@ -139,6 +144,7 @@ func TestInit_fromModule_dstInSrc(t *testing.T) {
 	view, _ := testView(t)
 	c := &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(testProvider()),
 			Ui:               ui,
 			View:             view,
@@ -173,6 +179,7 @@ func TestInit_get(t *testing.T) {
 	view, _ := testView(t)
 	c := &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(testProvider()),
 			Ui:               ui,
 			View:             view,
@@ -201,6 +208,7 @@ func TestInit_getUpgradeModules(t *testing.T) {
 	view, _ := testView(t)
 	c := &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(testProvider()),
 			Ui:               ui,
 			View:             view,
@@ -232,6 +240,7 @@ func TestInit_backend(t *testing.T) {
 	view, _ := testView(t)
 	c := &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(testProvider()),
 			Ui:               ui,
 			View:             view,
@@ -243,7 +252,7 @@ func TestInit_backend(t *testing.T) {
 		t.Fatalf("bad: \n%s", ui.ErrorWriter.String())
 	}
 
-	if _, err := os.Stat(filepath.Join(DefaultDataDir, DefaultStateFilename)); err != nil {
+	if _, err := os.Stat(filepath.Join(workdir.DefaultDataDir, DefaultStateFilename)); err != nil {
 		t.Fatalf("err: %s", err)
 	}
 }
@@ -261,6 +270,7 @@ func TestInit_backendUnset(t *testing.T) {
 		view, _ := testView(t)
 		c := &InitCommand{
 			Meta: Meta{
+				WorkingDir:       workdir.NewDir("."),
 				testingOverrides: metaOverridesForProvider(testProvider()),
 				Ui:               ui,
 				View:             view,
@@ -276,7 +286,7 @@ func TestInit_backendUnset(t *testing.T) {
 		t.Logf("First run output:\n%s", ui.OutputWriter.String())
 		t.Logf("First run errors:\n%s", ui.ErrorWriter.String())
 
-		if _, err := os.Stat(filepath.Join(DefaultDataDir, DefaultStateFilename)); err != nil {
+		if _, err := os.Stat(filepath.Join(workdir.DefaultDataDir, DefaultStateFilename)); err != nil {
 			t.Fatalf("err: %s", err)
 		}
 	}
@@ -293,6 +303,7 @@ func TestInit_backendUnset(t *testing.T) {
 		view, _ := testView(t)
 		c := &InitCommand{
 			Meta: Meta{
+				WorkingDir:       workdir.NewDir("."),
 				testingOverrides: metaOverridesForProvider(testProvider()),
 				Ui:               ui,
 				View:             view,
@@ -307,7 +318,7 @@ func TestInit_backendUnset(t *testing.T) {
 		t.Logf("Second run output:\n%s", ui.OutputWriter.String())
 		t.Logf("Second run errors:\n%s", ui.ErrorWriter.String())
 
-		s := testDataStateRead(t, filepath.Join(DefaultDataDir, DefaultStateFilename))
+		s := testDataStateRead(t, filepath.Join(workdir.DefaultDataDir, DefaultStateFilename))
 		if !s.Backend.Empty() {
 			t.Fatal("should not have backend config")
 		}
@@ -325,6 +336,7 @@ func TestInit_backendConfigFile(t *testing.T) {
 		view, _ := testView(t)
 		c := &InitCommand{
 			Meta: Meta{
+				WorkingDir:       workdir.NewDir("."),
 				testingOverrides: metaOverridesForProvider(testProvider()),
 				Ui:               ui,
 				View:             view,
@@ -336,7 +348,7 @@ func TestInit_backendConfigFile(t *testing.T) {
 		}
 
 		// Read our saved backend config and verify we have our settings
-		state := testDataStateRead(t, filepath.Join(DefaultDataDir, DefaultStateFilename))
+		state := testDataStateRead(t, filepath.Join(workdir.DefaultDataDir, DefaultStateFilename))
 		if got, want := normalizeJSON(t, state.Backend.ConfigRaw), `{"path":"hello","workspace_dir":null}`; got != want {
 			t.Errorf("wrong config\ngot:  %s\nwant: %s", got, want)
 		}
@@ -348,6 +360,7 @@ func TestInit_backendConfigFile(t *testing.T) {
 		view, _ := testView(t)
 		c := &InitCommand{
 			Meta: Meta{
+				WorkingDir:       workdir.NewDir("."),
 				testingOverrides: metaOverridesForProvider(testProvider()),
 				Ui:               ui,
 				View:             view,
@@ -368,6 +381,7 @@ func TestInit_backendConfigFile(t *testing.T) {
 		view, _ := testView(t)
 		c := &InitCommand{
 			Meta: Meta{
+				WorkingDir:       workdir.NewDir("."),
 				testingOverrides: metaOverridesForProvider(testProvider()),
 				Ui:               ui,
 				View:             view,
@@ -388,6 +402,7 @@ func TestInit_backendConfigFile(t *testing.T) {
 		view, _ := testView(t)
 		c := &InitCommand{
 			Meta: Meta{
+				WorkingDir:       workdir.NewDir("."),
 				testingOverrides: metaOverridesForProvider(testProvider()),
 				Ui:               ui,
 				View:             view,
@@ -408,6 +423,7 @@ func TestInit_backendConfigFile(t *testing.T) {
 		view, _ := testView(t)
 		c := &InitCommand{
 			Meta: Meta{
+				WorkingDir:       workdir.NewDir("."),
 				testingOverrides: metaOverridesForProvider(testProvider()),
 				Ui:               ui,
 				View:             view,
@@ -419,7 +435,7 @@ func TestInit_backendConfigFile(t *testing.T) {
 		}
 
 		// Read our saved backend config and verify the backend config is empty
-		state := testDataStateRead(t, filepath.Join(DefaultDataDir, DefaultStateFilename))
+		state := testDataStateRead(t, filepath.Join(workdir.DefaultDataDir, DefaultStateFilename))
 		if got, want := normalizeJSON(t, state.Backend.ConfigRaw), `{"path":null,"workspace_dir":null}`; got != want {
 			t.Errorf("wrong config\ngot:  %s\nwant: %s", got, want)
 		}
@@ -428,7 +444,11 @@ func TestInit_backendConfigFile(t *testing.T) {
 	// simulate the local backend having a required field which is not
 	// specified in the override file
 	t.Run("required-argument", func(t *testing.T) {
-		c := &InitCommand{}
+		c := &InitCommand{
+			Meta{
+				WorkingDir: workdir.NewDir("."),
+			},
+		}
 		schema := &configschema.Block{
 			Attributes: map[string]*configschema.Attribute{
 				"path": {
@@ -441,7 +461,7 @@ func TestInit_backendConfigFile(t *testing.T) {
 				},
 			},
 		}
-		flagConfigExtra := newRawFlags("-backend-config")
+		flagConfigExtra := flags.NewRawFlags("-backend-config")
 		_ = flagConfigExtra.Set("input.config")
 		_, diags := c.backendConfigOverrideBody(flagConfigExtra, schema)
 		if len(diags) != 0 {
@@ -460,6 +480,7 @@ func TestInit_backendConfigFilePowershellConfusion(t *testing.T) {
 	view, _ := testView(t)
 	c := &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(testProvider()),
 			Ui:               ui,
 			View:             view,
@@ -500,6 +521,7 @@ func TestInit_backendReconfigure(t *testing.T) {
 	view, _ := testView(t)
 	c := &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(testProvider()),
 			ProviderSource:   providerSource,
 			Ui:               ui,
@@ -542,6 +564,7 @@ func TestInit_backendConfigFileChange(t *testing.T) {
 	view, _ := testView(t)
 	c := &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(testProvider()),
 			Ui:               ui,
 			View:             view,
@@ -554,7 +577,7 @@ func TestInit_backendConfigFileChange(t *testing.T) {
 	}
 
 	// Read our saved backend config and verify we have our settings
-	state := testDataStateRead(t, filepath.Join(DefaultDataDir, DefaultStateFilename))
+	state := testDataStateRead(t, filepath.Join(workdir.DefaultDataDir, DefaultStateFilename))
 	if got, want := normalizeJSON(t, state.Backend.ConfigRaw), `{"path":"hello","workspace_dir":null}`; got != want {
 		t.Errorf("wrong config\ngot:  %s\nwant: %s", got, want)
 	}
@@ -575,6 +598,7 @@ func TestInit_backendMigrateWhileLocked(t *testing.T) {
 	view, _ := testView(t)
 	c := &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(testProvider()),
 			ProviderSource:   providerSource,
 			Ui:               ui,
@@ -622,12 +646,13 @@ func TestInit_backendConfigFileChangeWithExistingState(t *testing.T) {
 	ui := new(cli.MockUi)
 	c := &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(testProvider()),
 			Ui:               ui,
 		},
 	}
 
-	oldState := testDataStateRead(t, filepath.Join(DefaultDataDir, DefaultStateFilename))
+	oldState := testDataStateRead(t, filepath.Join(workdir.DefaultDataDir, DefaultStateFilename))
 
 	// we deliberately do not provide the answer for backend-migrate-copy-to-empty to trigger error
 	args := []string{"-migrate-state", "-backend-config", "input.config", "-input=true"}
@@ -636,7 +661,7 @@ func TestInit_backendConfigFileChangeWithExistingState(t *testing.T) {
 	}
 
 	// Read our backend config and verify new settings are not saved
-	state := testDataStateRead(t, filepath.Join(DefaultDataDir, DefaultStateFilename))
+	state := testDataStateRead(t, filepath.Join(workdir.DefaultDataDir, DefaultStateFilename))
 	if got, want := normalizeJSON(t, state.Backend.ConfigRaw), `{"path":"local-state.tfstate"}`; got != want {
 		t.Errorf("wrong config\ngot:  %s\nwant: %s", got, want)
 	}
@@ -657,6 +682,7 @@ func TestInit_backendConfigKV(t *testing.T) {
 	view, _ := testView(t)
 	c := &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(testProvider()),
 			Ui:               ui,
 			View:             view,
@@ -669,7 +695,7 @@ func TestInit_backendConfigKV(t *testing.T) {
 	}
 
 	// Read our saved backend config and verify we have our settings
-	state := testDataStateRead(t, filepath.Join(DefaultDataDir, DefaultStateFilename))
+	state := testDataStateRead(t, filepath.Join(workdir.DefaultDataDir, DefaultStateFilename))
 	if got, want := normalizeJSON(t, state.Backend.ConfigRaw), `{"path":"hello","workspace_dir":null}`; got != want {
 		t.Errorf("wrong config\ngot:  %s\nwant: %s", got, want)
 	}
@@ -685,6 +711,7 @@ func TestInit_backendConfigKVReInit(t *testing.T) {
 	view, _ := testView(t)
 	c := &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(testProvider()),
 			Ui:               ui,
 			View:             view,
@@ -699,6 +726,7 @@ func TestInit_backendConfigKVReInit(t *testing.T) {
 	ui = new(cli.MockUi)
 	c = &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(testProvider()),
 			Ui:               ui,
 			View:             view,
@@ -712,7 +740,7 @@ func TestInit_backendConfigKVReInit(t *testing.T) {
 	}
 
 	// make sure the backend is configured how we expect
-	configState := testDataStateRead(t, filepath.Join(DefaultDataDir, DefaultStateFilename))
+	configState := testDataStateRead(t, filepath.Join(workdir.DefaultDataDir, DefaultStateFilename))
 	cfg := map[string]interface{}{}
 	if err := json.Unmarshal(configState.Backend.ConfigRaw, &cfg); err != nil {
 		t.Fatal(err)
@@ -728,7 +756,7 @@ func TestInit_backendConfigKVReInit(t *testing.T) {
 	}
 
 	// make sure the backend is configured how we expect
-	configState = testDataStateRead(t, filepath.Join(DefaultDataDir, DefaultStateFilename))
+	configState = testDataStateRead(t, filepath.Join(workdir.DefaultDataDir, DefaultStateFilename))
 	cfg = map[string]interface{}{}
 	if err := json.Unmarshal(configState.Backend.ConfigRaw, &cfg); err != nil {
 		t.Fatal(err)
@@ -748,6 +776,7 @@ func TestInit_backendConfigKVReInitWithConfigDiff(t *testing.T) {
 	view, _ := testView(t)
 	c := &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(testProvider()),
 			Ui:               ui,
 			View:             view,
@@ -762,6 +791,7 @@ func TestInit_backendConfigKVReInitWithConfigDiff(t *testing.T) {
 	ui = new(cli.MockUi)
 	c = &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(testProvider()),
 			Ui:               ui,
 			View:             view,
@@ -776,7 +806,7 @@ func TestInit_backendConfigKVReInitWithConfigDiff(t *testing.T) {
 	}
 
 	// make sure the backend is configured how we expect
-	configState := testDataStateRead(t, filepath.Join(DefaultDataDir, DefaultStateFilename))
+	configState := testDataStateRead(t, filepath.Join(workdir.DefaultDataDir, DefaultStateFilename))
 	cfg := map[string]interface{}{}
 	if err := json.Unmarshal(configState.Backend.ConfigRaw, &cfg); err != nil {
 		t.Fatal(err)
@@ -796,6 +826,7 @@ func TestInit_backendCli_no_config_block(t *testing.T) {
 	view, _ := testView(t)
 	c := &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(testProvider()),
 			Ui:               ui,
 			View:             view,
@@ -835,6 +866,7 @@ func TestInit_backendReinitWithExtra(t *testing.T) {
 	view, _ := testView(t)
 	c := &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(testProvider()),
 			Ui:               ui,
 			View:             view,
@@ -847,7 +879,7 @@ func TestInit_backendReinitWithExtra(t *testing.T) {
 	}
 
 	// Read our saved backend config and verify we have our settings
-	state := testDataStateRead(t, filepath.Join(DefaultDataDir, DefaultStateFilename))
+	state := testDataStateRead(t, filepath.Join(workdir.DefaultDataDir, DefaultStateFilename))
 	if got, want := normalizeJSON(t, state.Backend.ConfigRaw), `{"path":"hello","workspace_dir":null}`; got != want {
 		t.Errorf("wrong config\ngot:  %s\nwant: %s", got, want)
 	}
@@ -860,7 +892,7 @@ func TestInit_backendReinitWithExtra(t *testing.T) {
 	if code := c.Run(args); code != 0 {
 		t.Fatalf("bad: \n%s", ui.ErrorWriter.String())
 	}
-	state = testDataStateRead(t, filepath.Join(DefaultDataDir, DefaultStateFilename))
+	state = testDataStateRead(t, filepath.Join(workdir.DefaultDataDir, DefaultStateFilename))
 	if got, want := normalizeJSON(t, state.Backend.ConfigRaw), `{"path":"hello","workspace_dir":null}`; got != want {
 		t.Errorf("wrong config\ngot:  %s\nwant: %s", got, want)
 	}
@@ -879,6 +911,7 @@ func TestInit_backendReinitConfigToExtra(t *testing.T) {
 	view, _ := testView(t)
 	c := &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(testProvider()),
 			Ui:               ui,
 			View:             view,
@@ -890,7 +923,7 @@ func TestInit_backendReinitConfigToExtra(t *testing.T) {
 	}
 
 	// Read our saved backend config and verify we have our settings
-	state := testDataStateRead(t, filepath.Join(DefaultDataDir, DefaultStateFilename))
+	state := testDataStateRead(t, filepath.Join(workdir.DefaultDataDir, DefaultStateFilename))
 	if got, want := normalizeJSON(t, state.Backend.ConfigRaw), `{"path":"foo","workspace_dir":null}`; got != want {
 		t.Errorf("wrong config\ngot:  %s\nwant: %s", got, want)
 	}
@@ -907,6 +940,7 @@ func TestInit_backendReinitConfigToExtra(t *testing.T) {
 	// file cached inside it, so it won't re-read the modification we just made.
 	c = &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(testProvider()),
 			Ui:               ui,
 			View:             view,
@@ -917,7 +951,7 @@ func TestInit_backendReinitConfigToExtra(t *testing.T) {
 	if code := c.Run(args); code != 0 {
 		t.Fatalf("bad: \n%s", ui.ErrorWriter.String())
 	}
-	state = testDataStateRead(t, filepath.Join(DefaultDataDir, DefaultStateFilename))
+	state = testDataStateRead(t, filepath.Join(workdir.DefaultDataDir, DefaultStateFilename))
 	if got, want := normalizeJSON(t, state.Backend.ConfigRaw), `{"path":"foo","workspace_dir":null}`; got != want {
 		t.Errorf("wrong config after moving to arg\ngot:  %s\nwant: %s", got, want)
 	}
@@ -988,8 +1022,9 @@ func TestInit_backendCloudInvalidOptions(t *testing.T) {
 		view, _ := testView(t)
 		c := &InitCommand{
 			Meta: Meta{
-				Ui:   ui,
-				View: view,
+				WorkingDir: workdir.NewDir("."),
+				Ui:         ui,
+				View:       view,
 			},
 		}
 		args := []string{"-backend-config=anything"}
@@ -1027,8 +1062,9 @@ Cloud configuration block in the root module.
 		view, _ := testView(t)
 		c := &InitCommand{
 			Meta: Meta{
-				Ui:   ui,
-				View: view,
+				WorkingDir: workdir.NewDir("."),
+				Ui:         ui,
+				View:       view,
 			},
 		}
 		args := []string{"-reconfigure"}
@@ -1066,8 +1102,9 @@ Cloud configuration settings.
 		view, _ := testView(t)
 		c := &InitCommand{
 			Meta: Meta{
-				Ui:   ui,
-				View: view,
+				WorkingDir: workdir.NewDir("."),
+				Ui:         ui,
+				View:       view,
 			},
 		}
 		args := []string{"-reconfigure"}
@@ -1097,8 +1134,9 @@ because activating cloud backend involves some additional steps.
 		view, _ := testView(t)
 		c := &InitCommand{
 			Meta: Meta{
-				Ui:   ui,
-				View: view,
+				WorkingDir: workdir.NewDir("."),
+				Ui:         ui,
+				View:       view,
 			},
 		}
 		args := []string{"-migrate-state"}
@@ -1136,8 +1174,9 @@ storage location is not configurable.
 		view, _ := testView(t)
 		c := &InitCommand{
 			Meta: Meta{
-				Ui:   ui,
-				View: view,
+				WorkingDir: workdir.NewDir("."),
+				Ui:         ui,
+				View:       view,
 			},
 		}
 		args := []string{"-migrate-state"}
@@ -1170,8 +1209,9 @@ prompts.
 		view, _ := testView(t)
 		c := &InitCommand{
 			Meta: Meta{
-				Ui:   ui,
-				View: view,
+				WorkingDir: workdir.NewDir("."),
+				Ui:         ui,
+				View:       view,
 			},
 		}
 		args := []string{"-force-copy"}
@@ -1209,8 +1249,9 @@ storage location is not configurable.
 		view, _ := testView(t)
 		c := &InitCommand{
 			Meta: Meta{
-				Ui:   ui,
-				View: view,
+				WorkingDir: workdir.NewDir("."),
+				Ui:         ui,
+				View:       view,
 			},
 		}
 		args := []string{"-force-copy"}
@@ -1246,6 +1287,7 @@ func TestInit_inputFalse(t *testing.T) {
 	view, _ := testView(t)
 	c := &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(testProvider()),
 			Ui:               ui,
 			View:             view,
@@ -1284,6 +1326,7 @@ func TestInit_inputFalse(t *testing.T) {
 	ui = new(cli.MockUi)
 	c = &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(testProvider()),
 			Ui:               ui,
 			View:             view,
@@ -1303,6 +1346,7 @@ func TestInit_inputFalse(t *testing.T) {
 	ui = new(cli.MockUi)
 	c = &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(testProvider()),
 			Ui:               ui,
 			View:             view,
@@ -1335,6 +1379,7 @@ func TestInit_getProvider(t *testing.T) {
 	})
 	defer close()
 	m := Meta{
+		WorkingDir:       workdir.NewDir("."),
 		testingOverrides: overrides,
 		Ui:               ui,
 		View:             view,
@@ -1439,6 +1484,7 @@ func TestInit_getProviderSource(t *testing.T) {
 	})
 	defer close()
 	m := Meta{
+		WorkingDir:       workdir.NewDir("."),
 		testingOverrides: overrides,
 		Ui:               ui,
 		View:             view,
@@ -1485,6 +1531,7 @@ func TestInit_getProviderLegacyFromState(t *testing.T) {
 	})
 	defer close()
 	m := Meta{
+		WorkingDir:       workdir.NewDir("."),
 		testingOverrides: overrides,
 		Ui:               ui,
 		View:             view,
@@ -1539,6 +1586,7 @@ func TestInit_getProviderInvalidPackage(t *testing.T) {
 	providerSource := getproviders.NewMockSource([]getproviders.PackageMeta{meta}, nil)
 
 	m := Meta{
+		WorkingDir:       workdir.NewDir("."),
 		testingOverrides: overrides,
 		Ui:               ui,
 		View:             view,
@@ -1599,6 +1647,7 @@ func TestInit_getProviderDetectedLegacy(t *testing.T) {
 	ui := new(cli.MockUi)
 	view, _ := testView(t)
 	m := Meta{
+		WorkingDir:     workdir.NewDir("."),
 		Ui:             ui,
 		View:           view,
 		ProviderSource: multiSource,
@@ -1667,6 +1716,7 @@ func TestInit_getProviderDetectedDuplicate(t *testing.T) {
 	ui := new(cli.MockUi)
 	view, _ := testView(t)
 	m := Meta{
+		WorkingDir:     workdir.NewDir("."),
 		Ui:             ui,
 		View:           view,
 		ProviderSource: multiSource,
@@ -1722,6 +1772,7 @@ func TestInit_providerSource(t *testing.T) {
 	ui := cli.NewMockUi()
 	view, _ := testView(t)
 	m := Meta{
+		WorkingDir:       workdir.NewDir("."),
 		testingOverrides: metaOverridesForProvider(testProvider()),
 		Ui:               ui,
 		View:             view,
@@ -1741,7 +1792,7 @@ func TestInit_providerSource(t *testing.T) {
 		t.Fatalf("unexpected \"configuration upgrade\" warning in output")
 	}
 
-	cacheDir := m.providerLocalCacheDir()
+	cacheDir := providercache.NewDir(m.WorkingDir.ProviderLocalCacheDir())
 	gotPackages := cacheDir.AllAvailablePackages()
 	wantPackages := map[addrs.Provider][]providercache.CachedProvider{
 		addrs.NewDefaultProvider("test"): {
@@ -1861,6 +1912,7 @@ func TestInit_cancelModules(t *testing.T) {
 	ui := cli.NewMockUi()
 	view, _ := testView(t)
 	m := Meta{
+		WorkingDir:       workdir.NewDir("."),
 		testingOverrides: metaOverridesForProvider(testProvider()),
 		Ui:               ui,
 		View:             view,
@@ -1914,6 +1966,7 @@ func TestInit_cancelProviders(t *testing.T) {
 	ui := cli.NewMockUi()
 	view, _ := testView(t)
 	m := Meta{
+		WorkingDir:       workdir.NewDir("."),
 		testingOverrides: metaOverridesForProvider(testProvider()),
 		Ui:               ui,
 		View:             view,
@@ -1958,6 +2011,7 @@ func TestInit_getUpgradePlugins(t *testing.T) {
 	ui := new(cli.MockUi)
 	view, _ := testView(t)
 	m := Meta{
+		WorkingDir:       workdir.NewDir("."),
 		testingOverrides: metaOverridesForProvider(testProvider()),
 		Ui:               ui,
 		View:             view,
@@ -1980,7 +2034,7 @@ func TestInit_getUpgradePlugins(t *testing.T) {
 		t.Fatalf("command did not complete successfully:\n%s", ui.ErrorWriter.String())
 	}
 
-	cacheDir := m.providerLocalCacheDir()
+	cacheDir := providercache.NewDir(m.WorkingDir.ProviderLocalCacheDir())
 	gotPackages := cacheDir.AllAvailablePackages()
 	wantPackages := map[addrs.Provider][]providercache.CachedProvider{
 		// "between" wasn't previously installed at all, so we installed
@@ -2086,6 +2140,7 @@ func TestInit_getProviderMissing(t *testing.T) {
 	ui := new(cli.MockUi)
 	view, _ := testView(t)
 	m := Meta{
+		WorkingDir:       workdir.NewDir("."),
 		testingOverrides: metaOverridesForProvider(testProvider()),
 		Ui:               ui,
 		View:             view,
@@ -2116,6 +2171,7 @@ func TestInit_checkRequiredVersion(t *testing.T) {
 	view, _ := testView(t)
 	c := &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(testProvider()),
 			Ui:               ui,
 			View:             view,
@@ -2147,6 +2203,7 @@ func TestInit_checkRequiredVersionFirst(t *testing.T) {
 		view, _ := testView(t)
 		c := &InitCommand{
 			Meta: Meta{
+				WorkingDir:       workdir.NewDir("."),
 				testingOverrides: metaOverridesForProvider(testProvider()),
 				Ui:               ui,
 				View:             view,
@@ -2171,6 +2228,7 @@ func TestInit_checkRequiredVersionFirst(t *testing.T) {
 		view, _ := testView(t)
 		c := &InitCommand{
 			Meta: Meta{
+				WorkingDir:       workdir.NewDir("."),
 				testingOverrides: metaOverridesForProvider(testProvider()),
 				Ui:               ui,
 				View:             view,
@@ -2208,6 +2266,7 @@ func TestInit_providerLockFile(t *testing.T) {
 	ui := new(cli.MockUi)
 	view, _ := testView(t)
 	m := Meta{
+		WorkingDir:       workdir.NewDir("."),
 		testingOverrides: metaOverridesForProvider(testProvider()),
 		Ui:               ui,
 		View:             view,
@@ -2395,6 +2454,7 @@ provider "registry.opentofu.org/hashicorp/test" {
 
 			ui := new(cli.MockUi)
 			m := Meta{
+				WorkingDir:       workdir.NewDir("."),
 				testingOverrides: metaOverridesForProvider(testProvider()),
 				Ui:               ui,
 				ProviderSource:   providerSource,
@@ -2404,7 +2464,7 @@ provider "registry.opentofu.org/hashicorp/test" {
 				Meta: m,
 			}
 
-			//write input lockfile
+			// write input lockfile
 			lockFile := ".terraform.lock.hcl"
 			if err := os.WriteFile(lockFile, []byte(tc.input), 0644); err != nil {
 				t.Fatalf("failed to write input lockfile: %s", err)
@@ -2443,6 +2503,7 @@ func TestInit_pluginDirReset(t *testing.T) {
 	view, _ := testView(t)
 	c := &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(testProvider()),
 			Ui:               ui,
 			View:             view,
@@ -2476,6 +2537,7 @@ func TestInit_pluginDirReset(t *testing.T) {
 	ui = new(cli.MockUi)
 	c = &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(testProvider()),
 			Ui:               ui,
 			View:             view,
@@ -2512,6 +2574,7 @@ func TestInit_pluginDirProviders(t *testing.T) {
 	ui := new(cli.MockUi)
 	view, _ := testView(t)
 	m := Meta{
+		WorkingDir:       workdir.NewDir("."),
 		testingOverrides: metaOverridesForProvider(testProvider()),
 		Ui:               ui,
 		View:             view,
@@ -2613,6 +2676,7 @@ func TestInit_pluginDirProvidersDoesNotGet(t *testing.T) {
 	ui := cli.NewMockUi()
 	view, _ := testView(t)
 	m := Meta{
+		WorkingDir:       workdir.NewDir("."),
 		testingOverrides: metaOverridesForProvider(testProvider()),
 		Ui:               ui,
 		View:             view,
@@ -2686,6 +2750,7 @@ func TestInit_pluginDirWithBuiltIn(t *testing.T) {
 	ui := cli.NewMockUi()
 	view, _ := testView(t)
 	m := Meta{
+		WorkingDir:       workdir.NewDir("."),
 		testingOverrides: metaOverridesForProvider(testProvider()),
 		Ui:               ui,
 		View:             view,
@@ -2724,6 +2789,7 @@ func TestInit_invalidBuiltInProviders(t *testing.T) {
 	ui := cli.NewMockUi()
 	view, _ := testView(t)
 	m := Meta{
+		WorkingDir:       workdir.NewDir("."),
 		testingOverrides: metaOverridesForProvider(testProvider()),
 		Ui:               ui,
 		View:             view,
@@ -2755,8 +2821,9 @@ func TestInit_invalidSyntaxNoBackend(t *testing.T) {
 	ui := cli.NewMockUi()
 	view, _ := testView(t)
 	m := Meta{
-		Ui:   ui,
-		View: view,
+		WorkingDir: workdir.NewDir("."),
+		Ui:         ui,
+		View:       view,
 	}
 
 	c := &InitCommand{
@@ -2784,8 +2851,9 @@ func TestInit_invalidSyntaxWithBackend(t *testing.T) {
 	ui := cli.NewMockUi()
 	view, _ := testView(t)
 	m := Meta{
-		Ui:   ui,
-		View: view,
+		WorkingDir: workdir.NewDir("."),
+		Ui:         ui,
+		View:       view,
 	}
 
 	c := &InitCommand{
@@ -2813,8 +2881,9 @@ func TestInit_invalidSyntaxInvalidBackend(t *testing.T) {
 	ui := cli.NewMockUi()
 	view, _ := testView(t)
 	m := Meta{
-		Ui:   ui,
-		View: view,
+		WorkingDir: workdir.NewDir("."),
+		Ui:         ui,
+		View:       view,
 	}
 
 	c := &InitCommand{
@@ -2845,8 +2914,9 @@ func TestInit_invalidSyntaxBackendAttribute(t *testing.T) {
 	ui := cli.NewMockUi()
 	view, _ := testView(t)
 	m := Meta{
-		Ui:   ui,
-		View: view,
+		WorkingDir: workdir.NewDir("."),
+		Ui:         ui,
+		View:       view,
 	}
 
 	c := &InitCommand{
@@ -2886,6 +2956,7 @@ func TestInit_tests(t *testing.T) {
 	view, _ := testView(t)
 	c := &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(provider),
 			Ui:               ui,
 			View:             view,
@@ -2916,6 +2987,7 @@ func TestInit_testsWithProvider(t *testing.T) {
 	view, _ := testView(t)
 	c := &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(provider),
 			Ui:               ui,
 			View:             view,
@@ -2958,6 +3030,7 @@ func TestInit_testsWithModule(t *testing.T) {
 	view, _ := testView(t)
 	c := &InitCommand{
 		Meta: Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: metaOverridesForProvider(provider),
 			Ui:               ui,
 			View:             view,
@@ -2990,8 +3063,9 @@ func TestInit_moduleSource(t *testing.T) {
 		defer closeInput()
 		c := &InitCommand{
 			Meta: Meta{
-				Ui:   ui,
-				View: view,
+				WorkingDir: workdir.NewDir("."),
+				Ui:         ui,
+				View:       view,
 			},
 		}
 
@@ -3011,8 +3085,9 @@ func TestInit_moduleSource(t *testing.T) {
 		defer closeInput()
 		c := &InitCommand{
 			Meta: Meta{
-				Ui:   ui,
-				View: view,
+				WorkingDir: workdir.NewDir("."),
+				Ui:         ui,
+				View:       view,
 			},
 		}
 
@@ -3032,8 +3107,9 @@ func TestInit_moduleSource(t *testing.T) {
 		defer closeInput()
 		c := &InitCommand{
 			Meta: Meta{
-				Ui:   ui,
-				View: view,
+				WorkingDir: workdir.NewDir("."),
+				Ui:         ui,
+				View:       view,
 			},
 		}
 
@@ -3055,8 +3131,9 @@ func TestInit_moduleSource(t *testing.T) {
 		view, _ := testView(t)
 		c := &InitCommand{
 			Meta: Meta{
-				Ui:   ui,
-				View: view,
+				WorkingDir: workdir.NewDir("."),
+				Ui:         ui,
+				View:       view,
 			},
 		}
 
@@ -3082,8 +3159,9 @@ func TestInit_moduleVersion(t *testing.T) {
 		view, _ := testView(t)
 		c := &InitCommand{
 			Meta: Meta{
-				Ui:   ui,
-				View: view,
+				WorkingDir: workdir.NewDir("."),
+				Ui:         ui,
+				View:       view,
 			},
 		}
 
@@ -3102,8 +3180,9 @@ func TestInit_invalidExtraLabel(t *testing.T) {
 	ui := cli.NewMockUi()
 	view, _ := testView(t)
 	m := Meta{
-		Ui:   ui,
-		View: view,
+		WorkingDir: workdir.NewDir("."),
+		Ui:         ui,
+		View:       view,
 	}
 
 	c := &InitCommand{
@@ -3137,6 +3216,7 @@ func TestInit_skipEncryptionBackendFalse(t *testing.T) {
 		})
 		defer closeCallback()
 		m := Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: overrides,
 			Ui:               ui,
 			View:             view,
@@ -3170,6 +3250,7 @@ func TestInit_skipEncryptionBackendFalse(t *testing.T) {
 		})
 		defer closeCallback()
 		m := Meta{
+			WorkingDir:       workdir.NewDir("."),
 			testingOverrides: overrides,
 			Ui:               ui,
 			View:             view,
@@ -3256,7 +3337,7 @@ func newMockProviderSource(t *testing.T, availableProviderVersions map[string][]
 func installFakeProviderPackages(t *testing.T, meta *Meta, providerVersions map[string][]string) {
 	t.Helper()
 
-	cacheDir := meta.providerLocalCacheDir()
+	cacheDir := providercache.NewDir(meta.WorkingDir.ProviderLocalCacheDir())
 	installFakeProviderPackagesElsewhere(t, cacheDir, providerVersions)
 }
 
