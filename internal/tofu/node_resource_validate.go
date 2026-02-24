@@ -22,7 +22,6 @@ import (
 	"github.com/opentofu/opentofu/internal/instances"
 	"github.com/opentofu/opentofu/internal/lang"
 	"github.com/opentofu/opentofu/internal/providers"
-	"github.com/opentofu/opentofu/internal/provisioners"
 	"github.com/opentofu/opentofu/internal/tfdiags"
 	"github.com/opentofu/opentofu/internal/tracing"
 	"github.com/opentofu/opentofu/internal/tracing/traceattrs"
@@ -130,16 +129,7 @@ func (n *NodeValidatableResource) Execute(ctx context.Context, evalCtx EvalConte
 func (n *NodeValidatableResource) validateProvisioner(ctx context.Context, evalCtx EvalContext, p *configs.Provisioner) tfdiags.Diagnostics {
 	var diags tfdiags.Diagnostics
 
-	provisioner, err := evalCtx.Provisioner(p.Type)
-	if err != nil {
-		diags = diags.Append(err)
-		return diags
-	}
-
-	if provisioner == nil {
-		return diags.Append(fmt.Errorf("provisioner %s not initialized", p.Type))
-	}
-	provisionerSchema, err := evalCtx.ProvisionerSchema(p.Type)
+	provisionerSchema, err := evalCtx.Provisioners().ProvisionerSchema(p.Type)
 	if err != nil {
 		return diags.Append(fmt.Errorf("failed to read schema for provisioner %s: %w", p.Type, err))
 	}
@@ -158,12 +148,8 @@ func (n *NodeValidatableResource) validateProvisioner(ctx context.Context, evalC
 
 	// Use unmarked value for validate request
 	unmarkedConfigVal, _ := configVal.UnmarkDeep()
-	req := provisioners.ValidateProvisionerConfigRequest{
-		Config: unmarkedConfigVal,
-	}
-
-	resp := provisioner.ValidateProvisionerConfig(req)
-	diags = diags.Append(resp.Diagnostics)
+	resp := evalCtx.Provisioners().ValidateProvisionerConfig(ctx, p.Type, unmarkedConfigVal)
+	diags = diags.Append(resp)
 
 	if p.Connection != nil {
 		// We can't comprehensively validate the connection config since its
@@ -187,8 +173,13 @@ func (n *NodeValidatableResource) evaluateBlock(ctx context.Context, evalCtx Eva
 func (n *NodeValidatableResource) validateResource(ctx context.Context, evalCtx EvalContext) tfdiags.Diagnostics {
 	var diags tfdiags.Diagnostics
 
-	provider, providerSchema, err := getProvider(ctx, evalCtx, n.ResolvedProvider.ProviderConfig, addrs.NoKey) // Provider Instance Keys are ignored during validate
+	provider, err := n.ResolvedProvider.Instance(addrs.NoKey) // Provider Instance Keys are ignored during validate
 	diags = diags.Append(err)
+	if diags.HasErrors() {
+		return diags
+	}
+	providerSchema, moreDiags := evalCtx.Providers().GetProviderSchema(ctx, n.ResolvedProvider.ProviderConfig.Provider)
+	diags = diags.Append(moreDiags)
 	if diags.HasErrors() {
 		return diags
 	}

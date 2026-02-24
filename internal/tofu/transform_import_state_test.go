@@ -32,8 +32,7 @@ func TestGraphNodeImportStateExecute(t *testing.T) {
 	provider.ConfigureProvider(t.Context(), providers.ConfigureProviderRequest{})
 
 	evalCtx := &MockEvalContext{
-		StateState:       state.SyncWrapper(),
-		ProviderProvider: provider,
+		StateState: state.SyncWrapper(),
 	}
 
 	// Import a new aws_instance.foo, this time with ID=bar. The original
@@ -45,11 +44,8 @@ func TestGraphNodeImportStateExecute(t *testing.T) {
 			Type: "aws_instance",
 			Name: "foo",
 		}.Instance(addrs.NoKey).Absolute(addrs.RootModuleInstance),
-		ID: "bar",
-		ResolvedProvider: ResolvedProvider{ProviderConfig: addrs.AbsProviderConfig{
-			Provider: addrs.NewDefaultProvider("aws"),
-			Module:   addrs.RootModule,
-		}},
+		ID:               "bar",
+		ResolvedProvider: mustResolvedProviderInRoot("aws", provider),
 	}
 
 	diags := node.Execute(t.Context(), evalCtx, walkImport)
@@ -71,24 +67,24 @@ func TestGraphNodeImportStateSubExecute(t *testing.T) {
 	state := states.NewState()
 	provider := testProvider("aws")
 	provider.ConfigureProvider(t.Context(), providers.ConfigureProviderRequest{})
-	evalCtx := &MockEvalContext{
-		StateState:       state.SyncWrapper(),
-		ProviderProvider: provider,
-		ProviderSchemaSchema: providers.ProviderSchema{
-			ResourceTypes: map[string]providers.Schema{
-				"aws_instance": {
-					Block: &configschema.Block{
-						Attributes: map[string]*configschema.Attribute{
-							"id": {
-								Type:     cty.String,
-								Computed: true,
-							},
+	provider.GetProviderSchemaResponse = &providers.ProviderSchema{
+		ResourceTypes: map[string]providers.Schema{
+			"aws_instance": {
+				Block: &configschema.Block{
+					Attributes: map[string]*configschema.Attribute{
+						"id": {
+							Type:     cty.String,
+							Computed: true,
 						},
 					},
 				},
 			},
 		},
 	}
+	evalCtx := &MockEvalContext{
+		StateState: state.SyncWrapper(),
+	}
+	evalCtx.installProvider(addrs.NewDefaultProvider("aws"), provider)
 
 	importedResource := providers.ImportedResource{
 		TypeName: "aws_instance",
@@ -101,11 +97,8 @@ func TestGraphNodeImportStateSubExecute(t *testing.T) {
 			Type: "aws_instance",
 			Name: "foo",
 		}.Instance(addrs.NoKey).Absolute(addrs.RootModuleInstance),
-		State: importedResource,
-		ResolvedProvider: ResolvedProvider{ProviderConfig: addrs.AbsProviderConfig{
-			Provider: addrs.NewDefaultProvider("aws"),
-			Module:   addrs.RootModule,
-		}},
+		State:            importedResource,
+		ResolvedProvider: mustResolvedProviderInRoot("aws", provider),
 	}
 	diags := node.Execute(t.Context(), evalCtx, walkImport)
 	if diags.HasErrors() {
@@ -132,25 +125,25 @@ func TestGraphNodeImportStateSubExecuteNull(t *testing.T) {
 		}))
 		return resp
 	}
-
-	evalCtx := &MockEvalContext{
-		StateState:       state.SyncWrapper(),
-		ProviderProvider: provider,
-		ProviderSchemaSchema: providers.ProviderSchema{
-			ResourceTypes: map[string]providers.Schema{
-				"aws_instance": {
-					Block: &configschema.Block{
-						Attributes: map[string]*configschema.Attribute{
-							"id": {
-								Type:     cty.String,
-								Computed: true,
-							},
+	provider.GetProviderSchemaResponse = &providers.ProviderSchema{
+		ResourceTypes: map[string]providers.Schema{
+			"aws_instance": {
+				Block: &configschema.Block{
+					Attributes: map[string]*configschema.Attribute{
+						"id": {
+							Type:     cty.String,
+							Computed: true,
 						},
 					},
 				},
 			},
 		},
 	}
+
+	evalCtx := &MockEvalContext{
+		StateState: state.SyncWrapper(),
+	}
+	evalCtx.installProvider(addrs.NewDefaultProvider("aws"), provider)
 
 	importedResource := providers.ImportedResource{
 		TypeName: "aws_instance",
@@ -163,11 +156,8 @@ func TestGraphNodeImportStateSubExecuteNull(t *testing.T) {
 			Type: "aws_instance",
 			Name: "foo",
 		}.Instance(addrs.NoKey).Absolute(addrs.RootModuleInstance),
-		State: importedResource,
-		ResolvedProvider: ResolvedProvider{ProviderConfig: addrs.AbsProviderConfig{
-			Provider: addrs.NewDefaultProvider("aws"),
-			Module:   addrs.RootModule,
-		}},
+		State:            importedResource,
+		ResolvedProvider: mustResolvedProviderInRoot("aws", provider),
 	}
 	diags := node.Execute(t.Context(), evalCtx, walkImport)
 	if !diags.HasErrors() {

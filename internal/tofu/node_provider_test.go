@@ -46,12 +46,13 @@ func TestNodeApplyableProviderExecute(t *testing.T) {
 		Provider: addrs.NewDefaultProvider("foo"),
 	}
 
-	n := &NodeApplyableProvider{&NodeAbstractProvider{
+	n := &NodeApplyableProvider{NodeAbstractProvider: &NodeAbstractProvider{
 		Addr:   providerAddr,
 		Config: config,
 	}}
 
-	evalCtx := &MockEvalContext{ProviderProvider: provider}
+	evalCtx := &MockEvalContext{}
+	evalCtx.installProvider(providerAddr.Provider, provider)
 	evalCtx.installSimpleEval()
 	evalCtx.ProviderInputValues = map[string]cty.Value{
 		"pw": cty.StringVal("so secret"),
@@ -61,11 +62,11 @@ func TestNodeApplyableProviderExecute(t *testing.T) {
 		t.Fatalf("err: %s", diags.Err())
 	}
 
-	if !evalCtx.ConfigureProviderCalled {
+	if !provider.ConfigureProviderCalled {
 		t.Fatal("should be called")
 	}
 
-	gotObj := evalCtx.ConfigureProviderConfig
+	gotObj := provider.ConfigureProviderRequest.Config
 	if !gotObj.Type().HasAttribute("user") {
 		t.Fatal("configuration object does not have \"user\" attribute")
 	}
@@ -93,12 +94,13 @@ func TestNodeApplyableProviderExecute_unknownImport(t *testing.T) {
 		Module:   addrs.RootModule,
 		Provider: addrs.NewDefaultProvider("foo"),
 	}
-	n := &NodeApplyableProvider{&NodeAbstractProvider{
+	n := &NodeApplyableProvider{NodeAbstractProvider: &NodeAbstractProvider{
 		Addr:   providerAddr,
 		Config: config,
 	}}
 
-	evalCtx := &MockEvalContext{ProviderProvider: provider}
+	evalCtx := &MockEvalContext{}
+	evalCtx.installProvider(providerAddr.Provider, provider)
 	evalCtx.installSimpleEval()
 
 	diags := n.Execute(t.Context(), evalCtx, walkImport)
@@ -111,7 +113,7 @@ func TestNodeApplyableProviderExecute_unknownImport(t *testing.T) {
 		t.Errorf("wrong diagnostic detail\n got: %q\nwant: %q", got, want)
 	}
 
-	if evalCtx.ConfigureProviderCalled {
+	if provider.ConfigureProviderCalled {
 		t.Fatal("should not be called")
 	}
 }
@@ -128,22 +130,23 @@ func TestNodeApplyableProviderExecute_unknownApply(t *testing.T) {
 		Module:   addrs.RootModule,
 		Provider: addrs.NewDefaultProvider("foo"),
 	}
-	n := &NodeApplyableProvider{&NodeAbstractProvider{
+	n := &NodeApplyableProvider{NodeAbstractProvider: &NodeAbstractProvider{
 		Addr:   providerAddr,
 		Config: config,
 	}}
-	evalCtx := &MockEvalContext{ProviderProvider: provider}
+	evalCtx := &MockEvalContext{}
+	evalCtx.installProvider(providerAddr.Provider, provider)
 	evalCtx.installSimpleEval()
 
 	if err := n.Execute(t.Context(), evalCtx, walkApply); err != nil {
 		t.Fatalf("err: %s", err)
 	}
 
-	if !evalCtx.ConfigureProviderCalled {
+	if !provider.ConfigureProviderCalled {
 		t.Fatal("should be called")
 	}
 
-	gotObj := evalCtx.ConfigureProviderConfig
+	gotObj := provider.ConfigureProviderRequest.Config
 	if !gotObj.Type().HasAttribute("test_string") {
 		t.Fatal("configuration object does not have \"test_string\" attribute")
 	}
@@ -165,22 +168,23 @@ func TestNodeApplyableProviderExecute_sensitive(t *testing.T) {
 		Provider: addrs.NewDefaultProvider("foo"),
 	}
 
-	n := &NodeApplyableProvider{&NodeAbstractProvider{
+	n := &NodeApplyableProvider{NodeAbstractProvider: &NodeAbstractProvider{
 		Addr:   providerAddr,
 		Config: config,
 	}}
 
-	evalCtx := &MockEvalContext{ProviderProvider: provider}
+	evalCtx := &MockEvalContext{}
+	evalCtx.installProvider(providerAddr.Provider, provider)
 	evalCtx.installSimpleEval()
 	if err := n.Execute(t.Context(), evalCtx, walkApply); err != nil {
 		t.Fatalf("err: %s", err)
 	}
 
-	if !evalCtx.ConfigureProviderCalled {
+	if !provider.ConfigureProviderCalled {
 		t.Fatal("should be called")
 	}
 
-	gotObj := evalCtx.ConfigureProviderConfig
+	gotObj := provider.ConfigureProviderRequest.Config
 	if !gotObj.Type().HasAttribute("test_string") {
 		t.Fatal("configuration object does not have \"test_string\" attribute")
 	}
@@ -202,12 +206,13 @@ func TestNodeApplyableProviderExecute_sensitiveValidate(t *testing.T) {
 		Provider: addrs.NewDefaultProvider("foo"),
 	}
 
-	n := &NodeApplyableProvider{&NodeAbstractProvider{
+	n := &NodeApplyableProvider{NodeAbstractProvider: &NodeAbstractProvider{
 		Addr:   providerAddr,
 		Config: config,
 	}}
 
-	evalCtx := &MockEvalContext{ProviderProvider: provider}
+	evalCtx := &MockEvalContext{}
+	evalCtx.installProvider(providerAddr.Provider, provider)
 	evalCtx.installSimpleEval()
 	if err := n.Execute(t.Context(), evalCtx, walkValidate); err != nil {
 		t.Fatalf("err: %s", err)
@@ -244,23 +249,25 @@ func TestNodeApplyableProviderExecute_emptyValidate(t *testing.T) {
 		Provider: addrs.NewDefaultProvider("foo"),
 	}
 
-	n := &NodeApplyableProvider{&NodeAbstractProvider{
+	n := &NodeApplyableProvider{NodeAbstractProvider: &NodeAbstractProvider{
 		Addr:   providerAddr,
 		Config: config,
 	}}
 
-	evalCtx := &MockEvalContext{ProviderProvider: provider}
+	evalCtx := &MockEvalContext{}
+	evalCtx.installProvider(providerAddr.Provider, provider)
 	evalCtx.installSimpleEval()
 	if err := n.Execute(t.Context(), evalCtx, walkValidate); err != nil {
 		t.Fatalf("err: %s", err)
 	}
 
-	if evalCtx.ConfigureProviderCalled {
+	if provider.ConfigureProviderCalled {
 		t.Fatal("should not be called")
 	}
 }
 
 func TestNodeApplyableProvider_Validate(t *testing.T) {
+	providerAddr := mustProviderConfig(`provider["registry.opentofu.org/hashicorp/aws"]`)
 	provider := mockProviderWithConfigSchema(&configschema.Block{
 		Attributes: map[string]*configschema.Attribute{
 			"region": {
@@ -269,7 +276,8 @@ func TestNodeApplyableProvider_Validate(t *testing.T) {
 			},
 		},
 	})
-	evalCtx := &MockEvalContext{ProviderProvider: provider}
+	evalCtx := &MockEvalContext{}
+	evalCtx.installProvider(providerAddr.Provider, provider)
 	evalCtx.installSimpleEval()
 
 	t.Run("valid", func(t *testing.T) {
@@ -282,12 +290,12 @@ func TestNodeApplyableProvider_Validate(t *testing.T) {
 
 		node := NodeApplyableProvider{
 			NodeAbstractProvider: &NodeAbstractProvider{
-				Addr:   mustProviderConfig(`provider["registry.opentofu.org/hashicorp/aws"]`),
+				Addr:   providerAddr,
 				Config: config,
 			},
 		}
 
-		diags := node.ValidateProvider(t.Context(), evalCtx, addrs.NoKey, provider)
+		diags := node.ValidateProvider(t.Context(), evalCtx, provider, addrs.NoKey, EvalDataForNoInstanceKey)
 		if diags.HasErrors() {
 			t.Errorf("unexpected error with valid config: %s", diags.Err())
 		}
@@ -303,12 +311,12 @@ func TestNodeApplyableProvider_Validate(t *testing.T) {
 
 		node := NodeApplyableProvider{
 			NodeAbstractProvider: &NodeAbstractProvider{
-				Addr:   mustProviderConfig(`provider["registry.opentofu.org/hashicorp/aws"]`),
+				Addr:   providerAddr,
 				Config: config,
 			},
 		}
 
-		diags := node.ValidateProvider(t.Context(), evalCtx, addrs.NoKey, provider)
+		diags := node.ValidateProvider(t.Context(), evalCtx, provider, addrs.NoKey, EvalDataForNoInstanceKey)
 		if !diags.HasErrors() {
 			t.Error("missing expected error with invalid config")
 		}
@@ -317,11 +325,11 @@ func TestNodeApplyableProvider_Validate(t *testing.T) {
 	t.Run("empty config", func(t *testing.T) {
 		node := NodeApplyableProvider{
 			NodeAbstractProvider: &NodeAbstractProvider{
-				Addr: mustProviderConfig(`provider["registry.opentofu.org/hashicorp/aws"]`),
+				Addr: providerAddr,
 			},
 		}
 
-		diags := node.ValidateProvider(t.Context(), evalCtx, addrs.NoKey, provider)
+		diags := node.ValidateProvider(t.Context(), evalCtx, provider, addrs.NoKey, EvalDataForNoInstanceKey)
 		if diags.HasErrors() {
 			t.Errorf("unexpected error with empty config: %s", diags.Err())
 		}
@@ -333,6 +341,7 @@ func TestNodeApplyableProvider_Validate(t *testing.T) {
 // TestNodeApplyableProvider_ConfigProvider_config_fn_err for
 // providers.ConfigureProviderRequest responses.
 func TestNodeApplyableProvider_ConfigProvider(t *testing.T) {
+	providerAddr := mustProviderConfig(`provider["registry.opentofu.org/hashicorp/aws"]`)
 	provider := mockProviderWithConfigSchema(&configschema.Block{
 		Attributes: map[string]*configschema.Attribute{
 			"region": {
@@ -351,7 +360,8 @@ func TestNodeApplyableProvider_ConfigProvider(t *testing.T) {
 		}
 		return
 	}
-	evalCtx := &MockEvalContext{ProviderProvider: provider}
+	evalCtx := &MockEvalContext{}
+	evalCtx.installProvider(providerAddr.Provider, provider)
 	evalCtx.installSimpleEval()
 
 	t.Run("valid", func(t *testing.T) {
@@ -364,12 +374,13 @@ func TestNodeApplyableProvider_ConfigProvider(t *testing.T) {
 
 		node := NodeApplyableProvider{
 			NodeAbstractProvider: &NodeAbstractProvider{
-				Addr:   mustProviderConfig(`provider["registry.opentofu.org/hashicorp/aws"]`),
+				Addr:   providerAddr,
 				Config: config,
 			},
+			instances: map[addrs.InstanceKey]providers.Configured{},
 		}
 
-		diags := node.ConfigureProvider(t.Context(), evalCtx, addrs.NoKey, provider, false)
+		diags := node.ConfigureProvider(t.Context(), evalCtx, addrs.NoKey, EvalDataForNoInstanceKey, false)
 		if diags.HasErrors() {
 			t.Errorf("unexpected error with valid config: %s", diags.Err())
 		}
@@ -378,11 +389,12 @@ func TestNodeApplyableProvider_ConfigProvider(t *testing.T) {
 	t.Run("missing required config (no config at all)", func(t *testing.T) {
 		node := NodeApplyableProvider{
 			NodeAbstractProvider: &NodeAbstractProvider{
-				Addr: mustProviderConfig(`provider["registry.opentofu.org/hashicorp/aws"]`),
+				Addr: providerAddr,
 			},
+			instances: map[addrs.InstanceKey]providers.Configured{},
 		}
 
-		diags := node.ConfigureProvider(t.Context(), evalCtx, addrs.NoKey, provider, false)
+		diags := node.ConfigureProvider(t.Context(), evalCtx, addrs.NoKey, EvalDataForNoInstanceKey, false)
 		if !diags.HasErrors() {
 			t.Fatal("missing expected error with nil config")
 		}
@@ -398,12 +410,13 @@ func TestNodeApplyableProvider_ConfigProvider(t *testing.T) {
 		}
 		node := NodeApplyableProvider{
 			NodeAbstractProvider: &NodeAbstractProvider{
-				Addr:   mustProviderConfig(`provider["registry.opentofu.org/hashicorp/aws"]`),
+				Addr:   providerAddr,
 				Config: config,
 			},
+			instances: map[addrs.InstanceKey]providers.Configured{},
 		}
 
-		diags := node.ConfigureProvider(t.Context(), evalCtx, addrs.NoKey, provider, false)
+		diags := node.ConfigureProvider(t.Context(), evalCtx, addrs.NoKey, EvalDataForNoInstanceKey, false)
 		if !diags.HasErrors() {
 			t.Fatal("missing expected error with invalid config")
 		}
@@ -416,6 +429,7 @@ func TestNodeApplyableProvider_ConfigProvider(t *testing.T) {
 
 // This test is similar to TestNodeApplyableProvider_ConfigProvider, but tests responses from the providers.ConfigureProviderRequest
 func TestNodeApplyableProvider_ConfigProvider_config_fn_err(t *testing.T) {
+	providerAddr := mustProviderConfig(`provider["registry.opentofu.org/hashicorp/aws"]`)
 	provider := mockProviderWithConfigSchema(&configschema.Block{
 		Attributes: map[string]*configschema.Attribute{
 			"region": {
@@ -424,14 +438,18 @@ func TestNodeApplyableProvider_ConfigProvider_config_fn_err(t *testing.T) {
 			},
 		},
 	})
-	evalCtx := &MockEvalContext{ProviderProvider: provider}
+	evalCtx := &MockEvalContext{}
+	evalCtx.installProvider(providerAddr.Provider, provider)
 	evalCtx.installSimpleEval()
 	// For this test, provider.PrepareConfigFn will succeed every time but the
 	// ctx.ConfigureProviderFn will return an error if a value is not found.
 	//
 	// This is an unlikely but real situation that occurs:
 	// https://github.com/hashicorp/terraform/issues/23087
-	evalCtx.ConfigureProviderFn = func(addr addrs.AbsProviderConfig, cfg cty.Value) (diags tfdiags.Diagnostics) {
+	provider.ConfigureProviderFn = func(req providers.ConfigureProviderRequest) (resp providers.ConfigureProviderResponse) {
+		var diags tfdiags.Diagnostics
+		cfg := req.Config
+
 		if cfg.IsNull() {
 			diags = diags.Append(fmt.Errorf("no config provided"))
 		} else {
@@ -440,6 +458,9 @@ func TestNodeApplyableProvider_ConfigProvider_config_fn_err(t *testing.T) {
 				diags = diags.Append(fmt.Errorf("value is not found"))
 			}
 		}
+
+		resp.Diagnostics = diags
+
 		return
 	}
 
@@ -453,12 +474,13 @@ func TestNodeApplyableProvider_ConfigProvider_config_fn_err(t *testing.T) {
 
 		node := NodeApplyableProvider{
 			NodeAbstractProvider: &NodeAbstractProvider{
-				Addr:   mustProviderConfig(`provider["registry.opentofu.org/hashicorp/aws"]`),
+				Addr:   providerAddr,
 				Config: config,
 			},
+			instances: map[addrs.InstanceKey]providers.Configured{},
 		}
 
-		diags := node.ConfigureProvider(t.Context(), evalCtx, addrs.NoKey, provider, false)
+		diags := node.ConfigureProvider(t.Context(), evalCtx, addrs.NoKey, EvalDataForNoInstanceKey, false)
 		if diags.HasErrors() {
 			t.Errorf("unexpected error with valid config: %s", diags.Err())
 		}
@@ -467,11 +489,12 @@ func TestNodeApplyableProvider_ConfigProvider_config_fn_err(t *testing.T) {
 	t.Run("missing required config (no config at all)", func(t *testing.T) {
 		node := NodeApplyableProvider{
 			NodeAbstractProvider: &NodeAbstractProvider{
-				Addr: mustProviderConfig(`provider["registry.opentofu.org/hashicorp/aws"]`),
+				Addr: providerAddr,
 			},
+			instances: map[addrs.InstanceKey]providers.Configured{},
 		}
 
-		diags := node.ConfigureProvider(t.Context(), evalCtx, addrs.NoKey, provider, false)
+		diags := node.ConfigureProvider(t.Context(), evalCtx, addrs.NoKey, EvalDataForNoInstanceKey, false)
 		if !diags.HasErrors() {
 			t.Fatal("missing expected error with nil config")
 		}
@@ -487,12 +510,13 @@ func TestNodeApplyableProvider_ConfigProvider_config_fn_err(t *testing.T) {
 		}
 		node := NodeApplyableProvider{
 			NodeAbstractProvider: &NodeAbstractProvider{
-				Addr:   mustProviderConfig(`provider["registry.opentofu.org/hashicorp/aws"]`),
+				Addr:   providerAddr,
 				Config: config,
 			},
+			instances: map[addrs.InstanceKey]providers.Configured{},
 		}
 
-		diags := node.ConfigureProvider(t.Context(), evalCtx, addrs.NoKey, provider, false)
+		diags := node.ConfigureProvider(t.Context(), evalCtx, addrs.NoKey, EvalDataForNoInstanceKey, false)
 		if !diags.HasErrors() {
 			t.Fatal("missing expected error with invalid config")
 		}
@@ -510,15 +534,17 @@ func TestGetSchemaError(t *testing.T) {
 	}
 
 	providerAddr := mustProviderConfig(`provider["terraform.io/some/provider"]`)
-	evalCtx := &MockEvalContext{ProviderProvider: provider}
+	evalCtx := &MockEvalContext{}
+	evalCtx.installProvider(providerAddr.Provider, provider)
 	evalCtx.installSimpleEval()
 	node := NodeApplyableProvider{
 		NodeAbstractProvider: &NodeAbstractProvider{
 			Addr: providerAddr,
 		},
+		instances: map[addrs.InstanceKey]providers.Configured{},
 	}
 
-	diags := node.ConfigureProvider(t.Context(), evalCtx, addrs.NoKey, provider, false)
+	diags := node.ConfigureProvider(t.Context(), evalCtx, addrs.NoKey, EvalDataForNoInstanceKey, false)
 	for _, d := range diags {
 		desc := d.Description()
 		if desc.Address != providerAddr.String() {

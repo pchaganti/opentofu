@@ -202,7 +202,7 @@ func TestNodePlanDeposedResourceInstanceObject_Execute(t *testing.T) {
 				NodeAbstractResourceInstance: &NodeAbstractResourceInstance{
 					Addr: absResource,
 					NodeAbstractResource: NodeAbstractResource{
-						ResolvedProvider: ResolvedProvider{ProviderConfig: mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`)},
+						ResolvedProvider: mustResolvedProviderInRoot("test", p),
 					},
 				},
 				DeposedKey:       deposedKey,
@@ -231,14 +231,14 @@ func TestNodeDestroyDeposedResourceInstanceObject_Execute(t *testing.T) {
 	deposedKey := states.NewDeposedKey()
 	state := states.NewState()
 	absResourceAddr := "test_instance.foo"
-	evalCtx, _ := initMockEvalContext(t.Context(), absResourceAddr, deposedKey)
+	evalCtx, p := initMockEvalContext(t.Context(), absResourceAddr, deposedKey)
 
 	absResource := mustResourceInstanceAddr(absResourceAddr)
 	node := NodeDestroyDeposedResourceInstanceObject{
 		NodeAbstractResourceInstance: &NodeAbstractResourceInstance{
 			Addr: absResource,
 			NodeAbstractResource: NodeAbstractResource{
-				ResolvedProvider: ResolvedProvider{ProviderConfig: mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`)},
+				ResolvedProvider: mustResolvedProviderInRoot("test", p),
 			},
 		},
 		DeposedKey: deposedKey,
@@ -267,8 +267,7 @@ func TestNodeDestroyDeposedResourceInstanceObject_WriteResourceInstanceState(t *
 			},
 		},
 	})
-	evalCtx.ProviderProvider = mockProvider
-	evalCtx.ProviderSchemaSchema = mockProvider.GetProviderSchema(t.Context())
+	evalCtx.installProvider(addrs.NewDefaultProvider("aws"), mockProvider)
 
 	obj := &states.ResourceInstanceObject{
 		Value: cty.ObjectVal(map[string]cty.Value{
@@ -279,7 +278,7 @@ func TestNodeDestroyDeposedResourceInstanceObject_WriteResourceInstanceState(t *
 	node := &NodeDestroyDeposedResourceInstanceObject{
 		NodeAbstractResourceInstance: &NodeAbstractResourceInstance{
 			NodeAbstractResource: NodeAbstractResource{
-				ResolvedProvider: ResolvedProvider{ProviderConfig: mustProviderConfig(`provider["registry.opentofu.org/hashicorp/aws"]`)},
+				ResolvedProvider: mustResolvedProviderInRoot("aws", mockProvider),
 			},
 			Addr: mustResourceInstanceAddr("aws_instance.foo"),
 		},
@@ -301,17 +300,16 @@ aws_instance.foo: (1 deposed)
 func TestNodeDestroyDeposedResourceInstanceObject_ExecuteMissingState(t *testing.T) {
 	p := simpleMockProvider()
 	evalCtx := &MockEvalContext{
-		StateState:           states.NewState().SyncWrapper(),
-		ProviderProvider:     simpleMockProvider(),
-		ProviderSchemaSchema: p.GetProviderSchema(t.Context()),
-		ChangesChanges:       plans.NewChanges().SyncWrapper(),
+		StateState:     states.NewState().SyncWrapper(),
+		ChangesChanges: plans.NewChanges().SyncWrapper(),
 	}
+	evalCtx.installProvider(addrs.NewDefaultProvider("test"), p)
 
 	node := NodeDestroyDeposedResourceInstanceObject{
 		NodeAbstractResourceInstance: &NodeAbstractResourceInstance{
 			Addr: mustResourceInstanceAddr("test_object.foo"),
 			NodeAbstractResource: NodeAbstractResource{
-				ResolvedProvider: ResolvedProvider{ProviderConfig: mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`)},
+				ResolvedProvider: mustResolvedProviderInRoot("test", p),
 			},
 		},
 		DeposedKey: states.NewDeposedKey(),
@@ -327,14 +325,14 @@ func TestNodeForgetDeposedResourceInstanceObject_Execute(t *testing.T) {
 	deposedKey := states.NewDeposedKey()
 	state := states.NewState()
 	absResourceAddr := "test_instance.foo"
-	evalCtx, _ := initMockEvalContext(t.Context(), absResourceAddr, deposedKey)
+	evalCtx, p := initMockEvalContext(t.Context(), absResourceAddr, deposedKey)
 
 	absResource := mustResourceInstanceAddr(absResourceAddr)
 	node := NodeForgetDeposedResourceInstanceObject{
 		NodeAbstractResourceInstance: &NodeAbstractResourceInstance{
 			Addr: absResource,
 			NodeAbstractResource: NodeAbstractResource{
-				ResolvedProvider: ResolvedProvider{ProviderConfig: mustProviderConfig(`provider["registry.opentofu.org/hashicorp/test"]`)},
+				ResolvedProvider: mustResolvedProviderInRoot("test", p),
 			},
 		},
 		DeposedKey: deposedKey,
@@ -393,14 +391,15 @@ func initMockEvalContext(ctx context.Context, resourceAddrs string, deposedKey s
 			"id": cty.StringVal("bar"),
 		}),
 	}
-	return &MockEvalContext{
-		PrevRunStateState:    state.DeepCopy().SyncWrapper(),
-		RefreshStateState:    state.DeepCopy().SyncWrapper(),
-		StateState:           state.SyncWrapper(),
-		ProviderProvider:     p,
-		ProviderSchemaSchema: schema,
-		ChangesChanges:       plans.NewChanges().SyncWrapper(),
-	}, p
+	evalCtx := &MockEvalContext{
+		PrevRunStateState: state.DeepCopy().SyncWrapper(),
+		RefreshStateState: state.DeepCopy().SyncWrapper(),
+		StateState:        state.SyncWrapper(),
+		ChangesChanges:    plans.NewChanges().SyncWrapper(),
+	}
+	evalCtx.installProvider(addrs.NewDefaultProvider("test"), p)
+
+	return evalCtx, p
 }
 
 func assertDiags(t *testing.T, got, want tfdiags.Diagnostics) {

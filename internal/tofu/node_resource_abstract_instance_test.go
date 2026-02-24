@@ -173,11 +173,10 @@ func TestNodeAbstractResourceInstance_WriteResourceInstanceState(t *testing.T) {
 		Addr: mustResourceInstanceAddr("aws_instance.foo"),
 		// instanceState:        obj,
 		NodeAbstractResource: NodeAbstractResource{
-			ResolvedProvider: ResolvedProvider{ProviderConfig: mustProviderConfig(`provider["registry.opentofu.org/hashicorp/aws"]`)},
+			ResolvedProvider: mustResolvedProviderInRoot("aws", mockProvider),
 		},
 	}
-	evalCtx.ProviderProvider = mockProvider
-	evalCtx.ProviderSchemaSchema = mockProvider.GetProviderSchema(t.Context())
+	evalCtx.installProvider(addrs.NewDefaultProvider("aws"), mockProvider)
 
 	err := node.writeResourceInstanceState(t.Context(), evalCtx, obj, workingState)
 	if err != nil {

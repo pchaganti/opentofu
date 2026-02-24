@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/opentofu/opentofu/internal/addrs"
 	"github.com/opentofu/opentofu/internal/configs"
 	"github.com/opentofu/opentofu/internal/configs/configschema"
 	"github.com/opentofu/opentofu/internal/dag"
@@ -27,7 +28,7 @@ type GraphNodeAttachResourceSchema interface {
 // GraphNodeAttachProviderConfigSchema is an interface implemented by node types
 // that need a provider configuration schema attached.
 type GraphNodeAttachProviderConfigSchema interface {
-	GraphNodeProvider
+	ProviderAddr() addrs.AbsProviderConfig
 
 	AttachProviderConfigSchema(*configschema.Block)
 }
@@ -69,9 +70,9 @@ func (t *AttachSchemaTransformer) Transform(ctx context.Context, g *Graph) error
 			providerFqn := tv.Provider()
 
 			// TODO: Plumb a useful context.Context through to here.
-			schema, version, err := t.Plugins.ResourceTypeSchema(ctx, providerFqn, mode, typeName)
-			if err != nil {
-				return fmt.Errorf("failed to read schema for %s in %s: %w", addr, providerFqn, err)
+			schema, version, diags := t.Plugins.ResourceTypeSchema(ctx, providerFqn, mode, typeName)
+			if diags.HasErrors() {
+				return fmt.Errorf("failed to read schema for %s in %s: %w", addr, providerFqn, diags.Err())
 			}
 			if schema == nil {
 				log.Printf("[ERROR] AttachSchemaTransformer: No resource schema available for %s", addr)
@@ -84,9 +85,9 @@ func (t *AttachSchemaTransformer) Transform(ctx context.Context, g *Graph) error
 		if tv, ok := v.(GraphNodeAttachProviderConfigSchema); ok {
 			providerAddr := tv.ProviderAddr()
 			// TODO: Plumb a useful context.Context through to here.
-			schema, err := t.Plugins.ProviderConfigSchema(ctx, providerAddr.Provider)
-			if err != nil {
-				return fmt.Errorf("failed to read provider configuration schema for %s: %w", providerAddr.Provider, err)
+			schema, diags := t.Plugins.ProviderConfigSchema(ctx, providerAddr.Provider)
+			if diags.HasErrors() {
+				return fmt.Errorf("failed to read provider configuration schema for %s: %w", providerAddr.Provider, diags.Err())
 			}
 			if schema == nil {
 				log.Printf("[ERROR] AttachSchemaTransformer: No provider config schema available for %s", providerAddr)

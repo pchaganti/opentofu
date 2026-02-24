@@ -17,6 +17,7 @@ import (
 	"github.com/opentofu/opentofu/internal/configs"
 	"github.com/opentofu/opentofu/internal/configs/configschema"
 	"github.com/opentofu/opentofu/internal/lang/marks"
+	"github.com/opentofu/opentofu/internal/plugins"
 	"github.com/opentofu/opentofu/internal/providers"
 	"github.com/opentofu/opentofu/internal/provisioners"
 	"github.com/opentofu/opentofu/internal/tfdiags"
@@ -27,9 +28,11 @@ func TestNodeValidatableResource_ValidateProvisioner_valid(t *testing.T) {
 	ctx := &MockEvalContext{}
 	ctx.installSimpleEval()
 	mp := &MockProvisioner{}
-	ps := &configschema.Block{}
-	ctx.ProvisionerSchemaSchema = ps
-	ctx.ProvisionerProvisioner = mp
+	mp.GetSchemaResponse = provisioners.GetSchemaResponse{Provisioner: &configschema.Block{}}
+
+	ctx.ProvisionersProvisioners = plugins.NewLibrary(nil, map[string]provisioners.Factory{
+		"baz": func() (provisioners.Interface, error) { return mp, nil },
+	}).NewProvisionerManager()
 
 	pc := &configs.Provisioner{
 		Type:   "baz",
@@ -70,9 +73,10 @@ func TestNodeValidatableResource_ValidateProvisioner__warning(t *testing.T) {
 	ctx := &MockEvalContext{}
 	ctx.installSimpleEval()
 	mp := &MockProvisioner{}
-	ps := &configschema.Block{}
-	ctx.ProvisionerSchemaSchema = ps
-	ctx.ProvisionerProvisioner = mp
+	mp.GetSchemaResponse = provisioners.GetSchemaResponse{Provisioner: &configschema.Block{}}
+	ctx.ProvisionersProvisioners = plugins.NewLibrary(nil, map[string]provisioners.Factory{
+		"baz": func() (provisioners.Interface, error) { return mp, nil },
+	}).NewProvisionerManager()
 
 	pc := &configs.Provisioner{
 		Type:   "baz",
@@ -116,9 +120,10 @@ func TestNodeValidatableResource_ValidateProvisioner__connectionInvalid(t *testi
 	ctx := &MockEvalContext{}
 	ctx.installSimpleEval()
 	mp := &MockProvisioner{}
-	ps := &configschema.Block{}
-	ctx.ProvisionerSchemaSchema = ps
-	ctx.ProvisionerProvisioner = mp
+	mp.GetSchemaResponse = provisioners.GetSchemaResponse{Provisioner: &configschema.Block{}}
+	ctx.ProvisionersProvisioners = plugins.NewLibrary(nil, map[string]provisioners.Factory{
+		"baz": func() (provisioners.Interface, error) { return mp, nil },
+	}).NewProvisionerManager()
 
 	pc := &configs.Provisioner{
 		Type:   "baz",
@@ -190,14 +195,13 @@ func TestNodeValidatableResource_ValidateResource_managedResource(t *testing.T) 
 		NodeAbstractResource: &NodeAbstractResource{
 			Addr:             mustConfigResourceAddr("test_foo.bar"),
 			Config:           rc,
-			ResolvedProvider: ResolvedProvider{ProviderConfig: mustProviderConfig(`provider["registry.opentofu.org/hashicorp/aws"]`)},
+			ResolvedProvider: mustResolvedProviderInRoot("test", p),
 		},
 	}
 
 	ctx := &MockEvalContext{}
 	ctx.installSimpleEval()
-	ctx.ProviderSchemaSchema = mp.GetProviderSchema(t.Context())
-	ctx.ProviderProvider = p
+	ctx.installProvider(addrs.NewDefaultProvider("test"), p)
 
 	err := node.validateResource(t.Context(), ctx)
 	if err != nil {
@@ -226,8 +230,7 @@ func TestNodeValidatableResource_ValidateResource_managedResourceCount(t *testin
 
 	ctx := &MockEvalContext{}
 	ctx.installSimpleEval()
-	ctx.ProviderSchemaSchema = mp.GetProviderSchema(t.Context())
-	ctx.ProviderProvider = p
+	ctx.installProvider(addrs.NewDefaultProvider("test"), p)
 
 	tests := []struct {
 		name  string
@@ -258,7 +261,7 @@ func TestNodeValidatableResource_ValidateResource_managedResourceCount(t *testin
 				NodeAbstractResource: &NodeAbstractResource{
 					Addr:             mustConfigResourceAddr("test_foo.bar"),
 					Config:           rc,
-					ResolvedProvider: ResolvedProvider{ProviderConfig: mustProviderConfig(`provider["registry.opentofu.org/hashicorp/aws"]`)},
+					ResolvedProvider: mustResolvedProviderInRoot("test", p),
 				},
 			}
 
@@ -292,14 +295,13 @@ func TestNodeValidatableResource_ValidateResource_ephemeralResource(t *testing.T
 		NodeAbstractResource: &NodeAbstractResource{
 			Addr:             mustConfigResourceAddr("ephemeral.test_foo.bar"),
 			Config:           rc,
-			ResolvedProvider: ResolvedProvider{ProviderConfig: mustProviderConfig(`provider["registry.opentofu.org/hashicorp/aws"]`)},
+			ResolvedProvider: mustResolvedProviderInRoot("test", p),
 		},
 	}
 
 	ctx := &MockEvalContext{}
 	ctx.installSimpleEval()
-	ctx.ProviderSchemaSchema = mp.GetProviderSchema(t.Context())
-	ctx.ProviderProvider = p
+	ctx.installProvider(addrs.NewDefaultProvider("test"), p)
 
 	t.Run("no errors", func(t *testing.T) {
 		mp.ValidateEphemeralConfigCalled = false
@@ -382,14 +384,13 @@ func TestNodeValidatableResource_ValidateResource_dataSource(t *testing.T) {
 		NodeAbstractResource: &NodeAbstractResource{
 			Addr:             mustConfigResourceAddr("test_foo.bar"),
 			Config:           rc,
-			ResolvedProvider: ResolvedProvider{ProviderConfig: mustProviderConfig(`provider["registry.opentofu.org/hashicorp/aws"]`)},
+			ResolvedProvider: mustResolvedProviderInRoot("test", p),
 		},
 	}
 
 	ctx := &MockEvalContext{}
 	ctx.installSimpleEval()
-	ctx.ProviderSchemaSchema = mp.GetProviderSchema(t.Context())
-	ctx.ProviderProvider = p
+	ctx.installProvider(addrs.NewDefaultProvider("test"), p)
 
 	diags := node.validateResource(t.Context(), ctx)
 	if diags.HasErrors() {
@@ -418,14 +419,13 @@ func TestNodeValidatableResource_ValidateResource_valid(t *testing.T) {
 		NodeAbstractResource: &NodeAbstractResource{
 			Addr:             mustConfigResourceAddr("test_object.foo"),
 			Config:           rc,
-			ResolvedProvider: ResolvedProvider{ProviderConfig: mustProviderConfig(`provider["registry.opentofu.org/hashicorp/aws"]`)},
+			ResolvedProvider: mustResolvedProviderInRoot("test", p),
 		},
 	}
 
 	ctx := &MockEvalContext{}
 	ctx.installSimpleEval()
-	ctx.ProviderSchemaSchema = mp.GetProviderSchema(t.Context())
-	ctx.ProviderProvider = p
+	ctx.installProvider(addrs.NewDefaultProvider("test"), p)
 
 	diags := node.validateResource(t.Context(), ctx)
 	if diags.HasErrors() {
@@ -455,14 +455,13 @@ func TestNodeValidatableResource_ValidateResource_warningsAndErrorsPassedThrough
 		NodeAbstractResource: &NodeAbstractResource{
 			Addr:             mustConfigResourceAddr("test_foo.bar"),
 			Config:           rc,
-			ResolvedProvider: ResolvedProvider{ProviderConfig: mustProviderConfig(`provider["registry.opentofu.org/hashicorp/aws"]`)},
+			ResolvedProvider: mustResolvedProviderInRoot("test", p),
 		},
 	}
 
 	ctx := &MockEvalContext{}
 	ctx.installSimpleEval()
-	ctx.ProviderSchemaSchema = mp.GetProviderSchema(t.Context())
-	ctx.ProviderProvider = p
+	ctx.installProvider(addrs.NewDefaultProvider("test"), p)
 
 	diags := node.validateResource(t.Context(), ctx)
 	if !diags.HasErrors() {
@@ -517,15 +516,13 @@ func TestNodeValidatableResource_ValidateResource_invalidDependsOn(t *testing.T)
 		NodeAbstractResource: &NodeAbstractResource{
 			Addr:             mustConfigResourceAddr("test_foo.bar"),
 			Config:           rc,
-			ResolvedProvider: ResolvedProvider{ProviderConfig: mustProviderConfig(`provider["registry.opentofu.org/hashicorp/aws"]`)},
+			ResolvedProvider: mustResolvedProviderInRoot("test", p),
 		},
 	}
 
 	ctx := &MockEvalContext{}
 	ctx.installSimpleEval()
-
-	ctx.ProviderSchemaSchema = mp.GetProviderSchema(t.Context())
-	ctx.ProviderProvider = p
+	ctx.installProvider(addrs.NewDefaultProvider("test"), p)
 
 	diags := node.validateResource(t.Context(), ctx)
 	if diags.HasErrors() {
@@ -601,15 +598,13 @@ func TestNodeValidatableResource_ValidateResource_invalidIgnoreChangesNonexisten
 		NodeAbstractResource: &NodeAbstractResource{
 			Addr:             mustConfigResourceAddr("test_foo.bar"),
 			Config:           rc,
-			ResolvedProvider: ResolvedProvider{ProviderConfig: mustProviderConfig(`provider["registry.opentofu.org/hashicorp/aws"]`)},
+			ResolvedProvider: mustResolvedProviderInRoot("test", p),
 		},
 	}
 
 	ctx := &MockEvalContext{}
 	ctx.installSimpleEval()
-
-	ctx.ProviderSchemaSchema = mp.GetProviderSchema(t.Context())
-	ctx.ProviderProvider = p
+	ctx.installProvider(addrs.NewDefaultProvider("test"), p)
 
 	diags := node.validateResource(t.Context(), ctx)
 	if diags.HasErrors() {
@@ -684,15 +679,13 @@ func TestNodeValidatableResource_ValidateResource_invalidIgnoreChangesComputed(t
 		NodeAbstractResource: &NodeAbstractResource{
 			Addr:             mustConfigResourceAddr("test_foo.bar"),
 			Config:           rc,
-			ResolvedProvider: ResolvedProvider{ProviderConfig: mustProviderConfig(`provider["registry.opentofu.org/hashicorp/aws"]`)},
+			ResolvedProvider: mustResolvedProviderInRoot("test", p),
 		},
 	}
 
 	ctx := &MockEvalContext{}
 	ctx.installSimpleEval()
-
-	ctx.ProviderSchemaSchema = mp.GetProviderSchema(t.Context())
-	ctx.ProviderProvider = p
+	ctx.installProvider(addrs.NewDefaultProvider("test"), p)
 
 	diags := node.validateResource(t.Context(), ctx)
 	if diags.HasErrors() {
@@ -762,37 +755,37 @@ func TestNodeValidatableResource_ValidateResource_suggestion(t *testing.T) {
 			mode:        addrs.ManagedResourceMode,
 			rtype:       "test_data_source",
 			wantSummary: "Invalid resource type",
-			wantDetail:  "The provider hashicorp/aws does not support resource type \"test_data_source\".\n\nDid you intend to use a block of type \"data\" \"test_data_source\"? If so, declare this using a block of type \"data\" instead of one of type \"resource\".",
+			wantDetail:  "The provider hashicorp/test does not support resource type \"test_data_source\".\n\nDid you intend to use a block of type \"data\" \"test_data_source\"? If so, declare this using a block of type \"data\" instead of one of type \"resource\".",
 		},
 		"managed resource with resource type of an ephemeral resource": {
 			mode:        addrs.ManagedResourceMode,
 			rtype:       "test_ephemeral_resource",
 			wantSummary: "Invalid resource type",
-			wantDetail:  "The provider hashicorp/aws does not support resource type \"test_ephemeral_resource\".\n\nDid you intend to use a block of type \"ephemeral\" \"test_ephemeral_resource\"? If so, declare this using a block of type \"ephemeral\" instead of one of type \"resource\".",
+			wantDetail:  "The provider hashicorp/test does not support resource type \"test_ephemeral_resource\".\n\nDid you intend to use a block of type \"ephemeral\" \"test_ephemeral_resource\"? If so, declare this using a block of type \"ephemeral\" instead of one of type \"resource\".",
 		},
 		"data source with resource type of a managed resource": {
 			mode:        addrs.DataResourceMode,
 			rtype:       "test_managed_resource",
 			wantSummary: "Invalid data source",
-			wantDetail:  "The provider hashicorp/aws does not support data source \"test_managed_resource\".\n\nDid you intend to use a block of type \"resource\" \"test_managed_resource\"? If so, declare this using a block of type \"resource\" instead of one of type \"data\".",
+			wantDetail:  "The provider hashicorp/test does not support data source \"test_managed_resource\".\n\nDid you intend to use a block of type \"resource\" \"test_managed_resource\"? If so, declare this using a block of type \"resource\" instead of one of type \"data\".",
 		},
 		"data source with resource type of an ephemeral resource": {
 			mode:        addrs.DataResourceMode,
 			rtype:       "test_ephemeral_resource",
 			wantSummary: "Invalid data source",
-			wantDetail:  "The provider hashicorp/aws does not support data source \"test_ephemeral_resource\".\n\nDid you intend to use a block of type \"ephemeral\" \"test_ephemeral_resource\"? If so, declare this using a block of type \"ephemeral\" instead of one of type \"data\".",
+			wantDetail:  "The provider hashicorp/test does not support data source \"test_ephemeral_resource\".\n\nDid you intend to use a block of type \"ephemeral\" \"test_ephemeral_resource\"? If so, declare this using a block of type \"ephemeral\" instead of one of type \"data\".",
 		},
 		"ephemeral resource with resource type of a managed resource": {
 			mode:        addrs.EphemeralResourceMode,
 			rtype:       "test_managed_resource",
 			wantSummary: "Invalid ephemeral resource",
-			wantDetail:  "The provider hashicorp/aws does not support ephemeral resource \"test_managed_resource\".\n\nDid you intend to use a block of type \"resource\" \"test_managed_resource\"? If so, declare this using a block of type \"resource\" instead of one of type \"ephemeral\".",
+			wantDetail:  "The provider hashicorp/test does not support ephemeral resource \"test_managed_resource\".\n\nDid you intend to use a block of type \"resource\" \"test_managed_resource\"? If so, declare this using a block of type \"resource\" instead of one of type \"ephemeral\".",
 		},
 		"ephemeral resource with resource type of a data source": {
 			mode:        addrs.EphemeralResourceMode,
 			rtype:       "test_data_source",
 			wantSummary: "Invalid ephemeral resource",
-			wantDetail:  "The provider hashicorp/aws does not support ephemeral resource \"test_data_source\".\n\nDid you intend to use a block of type \"data\" \"test_data_source\"? If so, declare this using a block of type \"data\" instead of one of type \"ephemeral\".",
+			wantDetail:  "The provider hashicorp/test does not support ephemeral resource \"test_data_source\".\n\nDid you intend to use a block of type \"data\" \"test_data_source\"? If so, declare this using a block of type \"data\" instead of one of type \"ephemeral\".",
 		},
 	}
 	for name, tt := range tests {
@@ -812,15 +805,13 @@ func TestNodeValidatableResource_ValidateResource_suggestion(t *testing.T) {
 				NodeAbstractResource: &NodeAbstractResource{
 					Addr:             mustConfigResourceAddr(fmt.Sprintf("%s%s.bar", prefix, tt.rtype)),
 					Config:           rc,
-					ResolvedProvider: ResolvedProvider{ProviderConfig: mustProviderConfig(`provider["registry.opentofu.org/hashicorp/aws"]`)},
+					ResolvedProvider: mustResolvedProviderInRoot("test", p),
 				},
 			}
 
 			ctx := &MockEvalContext{}
 			ctx.installSimpleEval()
-
-			ctx.ProviderSchemaSchema = mp.GetProviderSchema(t.Context())
-			ctx.ProviderProvider = p
+			ctx.installProvider(addrs.NewDefaultProvider("test"), p)
 
 			diags := node.validateResource(t.Context(), ctx)
 			if got, want := len(diags), 1; got != want {
