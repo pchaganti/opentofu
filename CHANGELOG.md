@@ -48,6 +48,7 @@ ENHANCEMENTS:
 
 BUG FIXES:
 
+- During validation and planning phase, `replace_triggered_by` expressions are now checked to ensure that the referenced resource attributes actually exist. ([#3967](https://github.com/opentofu/opentofu/pull/3967))
 - `length(module.example)` now returns the correct result for a module that has no output values when called using `count` or `for_each`. It would previously incorrectly return zero unless at least one output - A call to a module containing `check` blocks can now use `depends_on` without causing a dependency cycle error. ([#3060](https://github.com/opentofu/opentofu/issues/3060))
 value was declared inside the module. ([#3067](https://github.com/opentofu/opentofu/issues/3067))
 - `for_each` arguments in `dynamic` blocks can now call provider-defined functions. ([#3429](https://github.com/opentofu/opentofu/issues/3429))
@@ -56,6 +57,7 @@ value was declared inside the module. ([#3067](https://github.com/opentofu/opent
 - Modules containing nested provider configurations now reject the `enabled` argument, matching the existing behavior for `count`, `for_each`, and `depends_on`. ([#3680](https://github.com/opentofu/opentofu/pull/3680))
 - In JSON syntax, `key_provider` expressions can now use references written directly in quotes, without using template interpolation syntax. Previously only the template syntax was allowed, which was inconsistent with other parts of the encryption configuration. ([#3794](https://github.com/opentofu/opentofu/issues/3794))
 - In JSON syntax, the state encryption method configuration now allows specifying keys using both normal expression syntax and using template interpolation syntax. Previously only the template interpolation syntax was allowed, which was inconsistent with other parts of the encryption configuration. ([#3654](https://github.com/opentofu/opentofu/issues/3654))
+- In module source address syntax, addresses starting with `s3::http://` are now handled as plaintext HTTP requests to the given origin unless it's an official AWS hostname, whereas before OpenTofu just ignored the scheme and used "https" for any URL used with the "s3" address type. ([#3986](https://github.com/opentofu/opentofu/pull/3986))
 - OpenTofu no longer returns spurious errors about incorrectly-detected provider reference problems when modules fail to load during the construction of a configuration tree. ([#3681](https://github.com/opentofu/opentofu/pull/3681))
 - State lock now released correctly when `tofu apply` is interrupted using Ctrl+C while using the `http` backend. ([#3624](https://github.com/opentofu/opentofu/issues/3624))
 - `tofu init` no longer crashes when a module `version` refers to an input variable and the module is used in an expression from a test file. ([#3686](https://github.com/opentofu/opentofu/issues/3686))
