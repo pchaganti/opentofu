@@ -1,6 +1,6 @@
 module github.com/opentofu/opentofu
 
-go 1.26.1
+go 1.26.2
 
 // At the time of adding this configuration, the new Go feature introduced here https://github.com/golang/go/issues/67061,
 // was having a good amount of issues linked to, affecting AWS Firewall, GCP various services and a lot more.
@@ -13,12 +13,12 @@ godebug (
 require (
 	cloud.google.com/go/kms v1.26.0
 	cloud.google.com/go/storage v1.61.3
-	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.20.0
+	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.21.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/storage/armstorage v1.8.1
 	github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys v1.4.0
-	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.3
+	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.4
 	github.com/Netflix/go-expect v0.0.0-20220104043353-73e0943537d2
 	github.com/ProtonMail/go-crypto v1.4.1
 	github.com/agext/levenshtein v1.2.3
