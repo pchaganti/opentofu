@@ -20,6 +20,7 @@ import (
 	"github.com/hashicorp/go-plugin"
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/opentofu/opentofu/internal/command/flags"
+	"github.com/opentofu/opentofu/internal/command/system"
 	"github.com/opentofu/svchost/disco"
 
 	"github.com/opentofu/opentofu/internal/addrs"
@@ -62,38 +63,16 @@ type Meta struct {
 	// Meta which directly read and modify paths inside the data directory.
 	WorkingDir *workdir.Dir
 
-	View *views.View
+	// SystemCfg holds the configuration attributes that are global for all
+	// the commands and are used by different parts of the system.
+	//SystemCfg system.Config
+	SystemCfg system.Config
 
-	GlobalPluginDirs []string // Additional paths to search for plugins
+	View *views.View
 
 	// Services provides access to remote endpoint information for
 	// 'tofu-native' services running at a specific user-facing hostname.
 	Services *disco.Disco
-
-	// RunningInAutomation indicates that commands are being run by an
-	// automated system rather than directly at a command prompt.
-	//
-	// This is a hint to various command routines that it may be confusing
-	// to print out messages that suggest running specific follow-up
-	// commands, since the user consuming the output will not be
-	// in a position to run such commands.
-	//
-	// The intended use-case of this flag is when OpenTofu is running in
-	// some sort of workflow orchestration tool which is abstracting away
-	// the specific commands being run.
-	RunningInAutomation bool
-
-	// CLIConfigDir is the directory from which CLI configuration files were
-	// read by the caller and the directory where any changes to CLI
-	// configuration files by commands should be made.
-	//
-	// If this is empty then no configuration directory is available and
-	// commands which require one cannot proceed.
-	CLIConfigDir string
-
-	// PluginCacheDir, if non-empty, enables caching of downloaded plugins
-	// into the given directory.
-	PluginCacheDir string
 
 	// PluginCacheMayBreakDependencyLockFile is a temporary CLI configuration-based
 	// opt out for the behavior of only using the plugin cache dir if its
@@ -167,24 +146,6 @@ type Meta struct {
 	// just trusting that someone else did it before running OpenTofu.
 	UnmanagedProviders map[addrs.Provider]*plugin.ReattachConfig
 
-	// AllowExperimentalFeatures controls whether a command that embeds this
-	// Meta is permitted to make use of experimental OpenTofu features.
-	//
-	// Set this field only during the initial creation of Meta. If you change
-	// this field after calling methods of type Meta then the resulting
-	// behavior is undefined.
-	//
-	// In normal code this would be set by package main only in builds
-	// explicitly marked as being alpha releases or development snapshots,
-	// making experimental features unavailable otherwise. Test code may
-	// choose to set this if it needs to exercise experimental features.
-	//
-	// Some experiments predated the addition of this setting, and may
-	// therefore still be available even if this flag is false. Our intent
-	// is that all/most _future_ experiments will be unavailable unless this
-	// flag is set, to reinforce that experiments are not for production use.
-	AllowExperimentalFeatures bool
-
 	// ----------------------------------------------------------
 	// Protected: commands can set these
 	// ----------------------------------------------------------
@@ -217,48 +178,11 @@ type Meta struct {
 	// The fields below are expected to be set by the command via
 	// command line flags. See the Apply command for an example.
 	//
-	// statePath is the path to the state file. If this is empty, then
-	// no state will be loaded. It is also okay for this to be a path to
-	// a file that doesn't exist; it is assumed that this means that there
-	// is simply no state.
-	//
-	// stateOutPath is used to override the output path for the state.
-	// If not provided, the StatePath is used causing the old state to
-	// be overridden.
-	//
-	// backupPath is used to backup the state file before writing a modified
-	// version. It defaults to stateOutPath + DefaultBackupExtension
-	//
 	// parallelism is used to control the number of concurrent operations
 	// allowed when walking the graph
-	//
-	// provider is to specify specific resource providers
-	//
-	// stateLock is set to false to disable state locking
-	//
-	// stateLockTimeout is the optional duration to retry a state locks locks
-	// when it is already locked by another process.
-	//
-	// forceInitCopy suppresses confirmation for copying state data during
-	// init.
-	//
-	// reconfigure forces init to ignore any stored configuration.
-	//
-	// migrateState confirms the user wishes to migrate from the prior backend
-	// configuration to a new configuration.
-	statePath        string
-	stateOutPath     string
-	backupPath       string
-	parallelism      int
-	stateLock        bool
-	stateLockTimeout time.Duration
-	forceInitCopy    bool
-	reconfigure      bool
-	migrateState     bool
-
-	// Used with commands which write state to allow users to write remote
-	// state even if the remote and local OpenTofu versions don't match.
-	ignoreRemoteVersion bool
+	stateArgs   arguments.State
+	backendArgs arguments.Backend
+	parallelism int
 
 	// Used to cache the root module rootModuleCallCache and known variables.
 	// This helps prevent duplicate errors/warnings.
@@ -278,23 +202,9 @@ type testingOverrides struct {
 	Provisioners map[string]provisioners.Factory
 }
 
-// initStatePaths is used to initialize the default values for
-// statePath, stateOutPath, and backupPath
-func (m *Meta) initStatePaths() {
-	if m.statePath == "" {
-		m.statePath = arguments.DefaultStateFilename
-	}
-	if m.stateOutPath == "" {
-		m.stateOutPath = m.statePath
-	}
-	if m.backupPath == "" {
-		m.backupPath = m.stateOutPath + DefaultBackupExtension
-	}
-}
-
 // StateOutPath returns the true output path for the state file
 func (m *Meta) StateOutPath() string {
-	return m.stateOutPath
+	return m.stateArgs.StateOutPath
 }
 
 const (
@@ -580,17 +490,6 @@ func (m *Meta) SetWorkspace(name string) error {
 func isAutoVarFile(path string) bool {
 	return strings.HasSuffix(path, ".auto.tfvars") ||
 		strings.HasSuffix(path, ".auto.tfvars.json")
-}
-
-// FIXME: as an interim refactoring step, we apply the contents of the state
-// arguments directly to the Meta object. Future work would ideally update the
-// code paths which use these arguments to be passed them directly for clarity.
-func (m *Meta) applyStateArguments(args *arguments.State) {
-	m.stateLock = args.Lock
-	m.stateLockTimeout = args.LockTimeout
-	m.statePath = args.StatePath
-	m.stateOutPath = args.StateOutPath
-	m.backupPath = args.BackupPath
 }
 
 // checkRequiredVersion loads the config and check if the

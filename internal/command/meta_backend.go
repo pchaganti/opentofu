@@ -109,7 +109,7 @@ func (m *Meta) Backend(ctx context.Context, opts *BackendOpts, enc encryption.St
 		opts = &BackendOpts{}
 	}
 
-	if m.AllowExperimentalFeatures {
+	if m.SystemCfg.AllowExperimentalFeatures {
 		// TEMP: While we're in early development of the new language runtime
 		// we have an experimental shim to enable it using an environment
 		// variable, but that's allowed only in builds where experimental
@@ -151,7 +151,7 @@ func (m *Meta) Backend(ctx context.Context, opts *BackendOpts, enc encryption.St
 					fmt.Fprintf(&buf, "\n  - %s: %s", addr, err)
 				}
 				suggestion := "To download the plugins required for this configuration, run:\n  tofu init"
-				if m.RunningInAutomation {
+				if m.SystemCfg.RunningInAutomation {
 					// Don't mention "tofu init" specifically if we're running in an automation wrapper
 					suggestion = "You must install the required plugins before running OpenTofu operations."
 				}
@@ -327,7 +327,7 @@ func (m *Meta) selectWorkspace(ctx context.Context, b backend.Backend) error {
 func (m *Meta) BackendForLocalPlan(ctx context.Context, settings plans.Backend, enc encryption.StateEncryption) (backend.Enhanced, tfdiags.Diagnostics) {
 	var diags tfdiags.Diagnostics
 
-	if m.AllowExperimentalFeatures {
+	if m.SystemCfg.AllowExperimentalFeatures {
 		// TEMP: While we're in early development of the new language runtime
 		// we have an experimental shim to enable it using an environment
 		// variable, but that's allowed only in builds where experimental
@@ -426,12 +426,10 @@ func (m *Meta) backendCLIOpts(ctx context.Context) (*backend.CLIOpts, error) {
 	}
 	return &backend.CLIOpts{
 		View:                views.NewBackendRemote(m.View),
-		StatePath:           m.statePath,
-		StateOutPath:        m.stateOutPath,
-		StateBackupPath:     m.backupPath,
+		StateArgs:           m.stateArgs,
 		ContextOpts:         contextOpts,
 		Input:               m.Input(),
-		RunningInAutomation: m.RunningInAutomation,
+		RunningInAutomation: m.SystemCfg.RunningInAutomation,
 	}, err
 }
 
@@ -459,8 +457,8 @@ func (m *Meta) Operation(ctx context.Context, b backend.Backend, view views.Back
 	}
 
 	stateLocker := clistate.NewNoopLocker()
-	if m.stateLock {
-		stateLocker = clistate.NewLocker(m.stateLockTimeout, view.StateLocker())
+	if m.stateArgs.Lock {
+		stateLocker = clistate.NewLocker(m.stateArgs.LockTimeout, view.StateLocker())
 	}
 
 	depLocks, diags := m.lockedDependencies()
@@ -613,7 +611,7 @@ func (m *Meta) backendFromConfig(ctx context.Context, opts *BackendOpts, enc enc
 	// if we want to force reconfiguration of the backend, we set the backend
 	// state to nil on this copy. This will direct us through the correct
 	// configuration path in the switch statement below.
-	if m.reconfigure {
+	if m.backendArgs.Reconfigure {
 		s.Backend = nil
 	}
 
@@ -648,7 +646,7 @@ func (m *Meta) backendFromConfig(ctx context.Context, opts *BackendOpts, enc enc
 			return nil, diags
 		}
 
-		if s.Backend.Type != "cloud" && !m.migrateState {
+		if s.Backend.Type != "cloud" && !m.backendArgs.MigrateState {
 			diags = diags.Append(migrateOrReconfigDiag)
 			return nil, diags
 		}
@@ -737,7 +735,7 @@ func (m *Meta) backendFromConfig(ctx context.Context, opts *BackendOpts, enc enc
 			return nil, diags
 		}
 
-		if !cloudMode.InvolvesCloud() && !m.migrateState {
+		if !cloudMode.InvolvesCloud() && !m.backendArgs.MigrateState {
 			diags = diags.Append(migrateOrReconfigDiag)
 			return nil, diags
 		}
@@ -1072,8 +1070,8 @@ func (m *Meta) backend_C_r_s(ctx context.Context, c *configs.Backend, cHash int,
 		}
 	}
 
-	if m.stateLock {
-		stateLocker := clistate.NewLocker(m.stateLockTimeout, view.StateLocker())
+	if m.stateArgs.Lock {
+		stateLocker := clistate.NewLocker(m.stateArgs.LockTimeout, view.StateLocker())
 		if d := stateLocker.Lock(sMgr, "backend from plan"); d != nil {
 			diags = diags.Append(fmt.Errorf("Error locking state: %s", d))
 			return nil, diags
@@ -1204,8 +1202,8 @@ func (m *Meta) backend_C_r_S_changed(ctx context.Context, c *configs.Backend, cH
 			return nil, diags
 		}
 
-		if m.stateLock {
-			stateLocker := clistate.NewLocker(m.stateLockTimeout, view.StateLocker())
+		if m.stateArgs.Lock {
+			stateLocker := clistate.NewLocker(m.stateArgs.LockTimeout, view.StateLocker())
 			if d := stateLocker.Lock(sMgr, "backend from plan"); d != nil {
 				diags = diags.Append(fmt.Errorf("Error locking state: %s", d))
 				return nil, diags
@@ -1507,7 +1505,7 @@ func (m *Meta) remoteVersionCheck(b backend.Backend, workspace string) tfdiags.D
 
 	if back, ok := b.(BackendWithRemoteTerraformVersion); ok {
 		// Allow user override based on command-line flag
-		if m.ignoreRemoteVersion {
+		if m.backendArgs.IgnoreRemoteVersion {
 			back.IgnoreVersionConflict()
 		}
 		// If the override is set, this check will return a warning instead of
@@ -1531,7 +1529,7 @@ func (m *Meta) assertSupportedCloudInitOptions(mode cloud.ConfigChangeMode) tfdi
 	var diags tfdiags.Diagnostics
 	if mode.InvolvesCloud() {
 		log.Printf("[TRACE] Meta.Backend: Cloud backend mode initialization type: %s", mode)
-		if m.reconfigure {
+		if m.backendArgs.Reconfigure {
 			if mode.IsCloudMigration() {
 				diags = diags.Append(tfdiags.Sourceless(
 					tfdiags.Error,
@@ -1546,11 +1544,11 @@ func (m *Meta) assertSupportedCloudInitOptions(mode cloud.ConfigChangeMode) tfdi
 				))
 			}
 		}
-		if m.migrateState {
+		if m.backendArgs.MigrateState {
 			name := "-migrate-state"
-			if m.forceInitCopy {
+			if m.backendArgs.ForceInitCopy {
 				// -force copy implies -migrate-state in "tofu init",
-				// so m.migrateState is forced to true in this case even if
+				// so m.backendArgs.migrateState is forced to true in this case even if
 				// the user didn't actually specify it. We'll use the other
 				// name here to avoid being confusing, then.
 				name = "-force-copy"

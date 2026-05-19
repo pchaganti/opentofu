@@ -77,12 +77,13 @@ func (c *InitCommand) Run(rawArgs []string) int {
 	// operation, but there is no clear path to pass this value down, so we
 	// continue to mutate the Meta object state for now.
 	c.Meta.input = args.ViewOptions.InputEnabled
-	c.configureBackendFlags(args.Backend)
 
 	if len(args.FlagPluginPath) > 0 {
 		c.pluginPath = args.FlagPluginPath
 	}
 	c.Meta.variableArgs = args.Vars.All()
+	c.Meta.stateArgs = *args.State
+	c.Meta.backendArgs = *args.Backend
 
 	// This gets the current directory as full path.
 	path := c.WorkingDir.NormalizePath(c.WorkingDir.RootModuleDir())
@@ -312,7 +313,7 @@ To initialize the configuration already in this working directory, omit the
 	}
 
 	if cb, ok := back.(*cloud.Cloud); ok {
-		if c.RunningInAutomation {
+		if c.SystemCfg.RunningInAutomation {
 			if err := cb.AssertImportCompatible(config); err != nil {
 				diags = diags.Append(tfdiags.Sourceless(tfdiags.Error, "Compatibility error", err.Error()))
 				view.Diagnostics(diags)
@@ -356,7 +357,7 @@ To initialize the configuration already in this working directory, omit the
 	view.Diagnostics(diags)
 	_, isCloud := back.(*cloud.Cloud)
 	view.InitSuccess(isCloud)
-	if !c.RunningInAutomation {
+	if !c.SystemCfg.RunningInAutomation {
 		// If we're not running in an automation wrapper, give the user
 		// some more detailed next steps that are appropriate for interactive
 		// shell usage.
@@ -1149,21 +1150,6 @@ func (c *InitCommand) backendConfigOverrideBody(flags flags.RawFlags, schema *co
 
 func (c *InitCommand) AutocompleteArgs() complete.Predictor {
 	return complete.PredictDirs("")
-}
-
-// configureBackendFlags is a temporary shim until we move the backend migration logic away from the Meta fields.
-//
-// TODO meta-refactor: remove this when the Meta fields configured here will be removed and replaced
-// with proper arguments for the backend.
-func (c *InitCommand) configureBackendFlags(args *arguments.Backend) {
-	c.forceInitCopy = args.ForceInitCopy
-	c.reconfigure = args.Reconfigure
-	c.migrateState = args.MigrateState
-	c.Meta.ignoreRemoteVersion = args.IgnoreRemoteVersion
-	// TODO meta-refactor: unify these 2 args attributes with the state flags in arguments.extendedFlagSet
-	//  https://github.com/opentofu/opentofu/blob/db8c872defd8666618649ef7e29fa2b809adfd5e/internal/command/arguments/extended.go#L320-L321
-	c.Meta.stateLock = args.StateLock
-	c.Meta.stateLockTimeout = args.StateLockTimeout
 }
 
 func (c *InitCommand) AutocompleteFlags() complete.Flags {
