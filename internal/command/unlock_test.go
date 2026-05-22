@@ -13,8 +13,8 @@ import (
 	"github.com/opentofu/opentofu/internal/backend/remote-state/inmem"
 	"github.com/opentofu/opentofu/internal/command/arguments"
 	"github.com/opentofu/opentofu/internal/command/workdir"
-
-	legacy "github.com/opentofu/opentofu/internal/legacy/tofu"
+	"github.com/opentofu/opentofu/internal/states"
+	"github.com/opentofu/opentofu/internal/states/statefile"
 )
 
 // Since we can't unlock a local state file, just test that calling unlock
@@ -23,16 +23,16 @@ func TestUnlock(t *testing.T) {
 	td := t.TempDir()
 	t.Chdir(td)
 
-	// Write the legacy state
 	statePath := arguments.DefaultStateFilename
 	{
 		f, err := os.Create(statePath)
 		if err != nil {
 			t.Fatalf("err: %s", err)
 		}
-		err = legacy.WriteState(legacy.NewState(), f)
-		f.Close()
-		if err != nil {
+		defer f.Close()
+
+		sf := statefile.New(states.NewState(), "test-lineage", 1)
+		if err := statefile.WriteForTest(sf, f); err != nil {
 			t.Fatalf("err: %s", err)
 		}
 	}
