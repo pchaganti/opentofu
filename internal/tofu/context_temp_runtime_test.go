@@ -21,25 +21,70 @@ type ExperimentalFlag string
 const (
 	ExperimentalFlagUnknown ExperimentalFlag = "Unknown"
 
-	ExperimentalBugCancel ExperimentalFlag = "Bug Context Cancel"
+	ExperimentalBugCancel            ExperimentalFlag = "Bug Context Cancel"
+	ExperimentalBugStateProvider     ExperimentalFlag = "Bug State Provider"
+	ExperimentalBugDeclareProvider   ExperimentalFlag = "Bug Declare Provider"
+	ExperimentalBugReferenceProvider ExperimentalFlag = "Bug Reference Provider"
+	ExperimentalBugResourceReadNull  ExperimentalFlag = "Bug Read Resource Deleted"
+	ExperimentalBugDataResource      ExperimentalFlag = "Bug Data Resource"
+	ExperimentalBugVariableInput     ExperimentalFlag = "Bug Variable Input"
+	ExperimentalBugForEach           ExperimentalFlag = "Bug For Each" // TODO run existing evalchecks tests against new engine
 
-	ExperimentalFeatureCBD        ExperimentalFlag = "Missing Create Before Destroy"
-	ExperimentalFeatureDeposed    ExperimentalFlag = "Missing Deposed"
-	ExperimentalFeatureCondition  ExperimentalFlag = "Missing Pre/Post Conditions"
-	ExperimentalFeatureLocalState ExperimentalFlag = "Missing Store locals in state"
-	ExperimentalFeatureChecks     ExperimentalFlag = "Missing Checks"
-	ExperimentalFeatureChanges    ExperimentalFlag = "Missing Plan Changes"
-	ExperimentalFeatureDeprecated ExperimentalFlag = "Missing Deprecated"
-	ExperimentalFeatureImport     ExperimentalFlag = "Missing Importing"
-	ExperimentalFeatureRefresh    ExperimentalFlag = "Missing Refresh"
+	ExperimentalChangeDiagWording ExperimentalFlag = "Change Different Diagnostic Wording"
+	ExperimentalChangeErrorEarly  ExperimentalFlag = "Change Detect Error Earlier"
+
+	ExperimentalFeatureCBD               ExperimentalFlag = "Missing Create Before Destroy"
+	ExperimentalFeatureDeposed           ExperimentalFlag = "Missing Deposed"
+	ExperimentalFeatureCondition         ExperimentalFlag = "Missing Pre/Post Conditions"
+	ExperimentalFeatureLocalState        ExperimentalFlag = "Missing Store locals in state"
+	ExperimentalFeatureChecks            ExperimentalFlag = "Missing Checks"
+	ExperimentalFeatureChanges           ExperimentalFlag = "Missing Plan Changes"
+	ExperimentalFeatureDeprecated        ExperimentalFlag = "Missing Deprecated"
+	ExperimentalFeatureImport            ExperimentalFlag = "Missing Importing"
+	ExperimentalFeatureRefresh           ExperimentalFlag = "Missing Refresh"
+	ExperimentalFeatureValidate          ExperimentalFlag = "Missing Validate"
+	ExperimentalFeatureDestroy           ExperimentalFlag = "Missing Destroy"
+	ExperimentalFeatureMoved             ExperimentalFlag = "Missing Moved"
+	ExperimentalFeatureRemoved           ExperimentalFlag = "Missing Removed"
+	ExperimentalFeatureSkipDestroy       ExperimentalFlag = "Missing Lifecycle Destroy"
+	ExperimentalFeatureUpgradeState      ExperimentalFlag = "Missing Upgrade Resource State"
+	ExperimentalFeatureHooks             ExperimentalFlag = "Missing Hooks"
+	ExperimentalFeatureTarget            ExperimentalFlag = "Missing Targeting"
+	ExperimentalFeatureReplaceTB         ExperimentalFlag = "Missing replace_triggered_by"
+	ExperimentalFeatureProvisioner       ExperimentalFlag = "Missing Provisioners"
+	ExperimentalFeatureDependsOn         ExperimentalFlag = "Missing Depends On"
+	ExperimentalFeatureIgnoreChanges     ExperimentalFlag = "Missing Ignore Changes"
+	ExperimentalFeatureVarCondition      ExperimentalFlag = "Missing Variable Condiitions"
+	ExperimentalFeaturePathAttrs         ExperimentalFlag = "Missing Path/Terraform/Tofu Attrs"
+	ExperimentalFeaturePreventDestroy    ExperimentalFlag = "Missing Prevent Destroy"
+	ExperimentalFeaturePlannedState      ExperimentalFlag = "Missing Planned State"
+	ExperimentalFeatureForceReplace      ExperimentalFlag = "Missing Force Replace"
+	ExperimentalFeatureRootOutput        ExperimentalFlag = "Missing Root Output"
+	ExperimentalFeatureSensitivity       ExperimentalFlag = "Missing Sensitivity Handling"
+	ExperimentalFeatureSelfReference     ExperimentalFlag = "Missing Self Reference"
+	ExperimentalFeatureProviderMeta      ExperimentalFlag = "Missing Provider Meta"
+	ExperimentalFeatureTaint             ExperimentalFlag = "Missing Taint"
+	ExperimentalFeatureErrorHandling     ExperimentalFlag = "Missing Error Handling"
+	ExperimentalFeatureStateDependencies ExperimentalFlag = "Missing State Dependencies"
+	ExperimentalFeatureProviderFunctions ExperimentalFlag = "Missing Provider Defined Functions"
+	ExperimentalFeatureProviderInstances ExperimentalFlag = "Missing Provider Instances"
+
+	// Fixed
+	ExperimentalBugExecGraph ExperimentalFlag = "Bug in generated Exec Graph"
 )
 
 func SkipExperimental(t *testing.T, features ...ExperimentalFlag) {
 	if experimentalRuntimeEnabled() {
 		var strs []string
 		for _, feature := range features {
-			strs = append(strs, string(feature))
+			switch feature {
+			case ExperimentalBugExecGraph:
+			default:
+				strs = append(strs, string(feature))
+			}
 		}
-		t.Skip("New Engine: " + strings.Join(strs, ", "))
+		if len(strs) > 0 {
+			t.Skip("New Engine: " + strings.Join(strs, ", "))
+		}
 	}
 }
