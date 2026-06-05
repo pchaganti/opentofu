@@ -148,8 +148,9 @@ func (b *Builder) ManagedFinalPlan(
 //
 // fallbackObj is usually a [NilResultRef], but should be set for the "create"
 // leg of a "create then destroy" replace operation to be the result of a
-// call to [Builder.ManagedDepose] so that the deposed object can be restored
-// to current if the create call completely fails to create a new object.
+// call to [Builder.ManagedPerformDepose] so that the deposed object can be
+// restored to current if the create call completely fails to create a new
+// object.
 func (b *Builder) ManagedApply(
 	finalPlan ResultRef[*exec.ManagedResourceObjectFinalPlan],
 	fallbackObj ResourceInstanceResultRef,
@@ -161,13 +162,39 @@ func (b *Builder) ManagedApply(
 	})
 }
 
-func (b *Builder) ManagedDepose(
+// ManagedPrepareDepose performs the first half of the work to "depose" a
+// resource instance object as part of a create-before-destroy replace
+// operation.
+//
+// The final plan given as input must be a plan to destroy a "current" object.
+// The result is an equivalent plan whose only difference is that it's set
+// up to destroy the deposed object which has the given deposed key.
+//
+// The result of this operation should then be sent to both
+// [Builder.ManagedPerformDepose] and [Builder.ManagedApply] as part of the
+// overall subgraph handling the replace operation.
+//
+// This operation is an intrinsic, meaning that its behavior lives directly
+// in the execution graph runner rather than being delegated to an external
+// [exec.Operations] implementation.
+func (b *Builder) ManagedPrepareDepose(
+	finalPlan ResultRef[*exec.ManagedResourceObjectFinalPlan],
+	deposedKey ResultRef[addrs.DeposedKey],
+) ResultRef[*exec.ManagedResourceObjectFinalPlan] {
+	return operationRef[*exec.ManagedResourceObjectFinalPlan](b, operationDesc{
+		opCode:   opManagedPrepareDepose,
+		operands: []AnyResultRef{finalPlan, deposedKey},
+	})
+}
+
+func (b *Builder) ManagedPerformDepose(
 	currentObj ResourceInstanceResultRef,
+	finalDeletePlan ResultRef[*exec.ManagedResourceObjectFinalPlan],
 	waitFor AnyResultRef,
 ) ResourceInstanceResultRef {
 	return operationRef[*exec.ResourceInstanceObject](b, operationDesc{
-		opCode:   opManagedDepose,
-		operands: []AnyResultRef{currentObj, waitFor},
+		opCode:   opManagedPerformDepose,
+		operands: []AnyResultRef{currentObj, finalDeletePlan, waitFor},
 	})
 }
 

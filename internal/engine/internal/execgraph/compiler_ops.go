@@ -7,6 +7,7 @@ package execgraph
 
 import (
 	"context"
+	"fmt"
 	"log"
 
 	"github.com/zclconf/go-cty/cty"
@@ -140,9 +141,64 @@ func (c *compiler) compileOpManagedApply(operands *compilerOperands) nodeExecute
 	}
 }
 
-func (c *compiler) compileOpManagedDepose(operands *compilerOperands) nodeExecuteRaw {
+func (c *compiler) compileOpManagedPrepareDepose(operands *compilerOperands) nodeExecuteRaw {
+	getFinalPlan := nextOperand[*exec.ManagedResourceObjectFinalPlan](operands)
+	getDeposedKey := nextOperand[addrs.DeposedKey](operands)
+	diags := operands.Finish()
+	c.diags = c.diags.Append(diags)
+	if diags.HasErrors() {
+		return nil
+	}
+
+	// This operation is an intrinsic, which means that its behavior is
+	// fixed directly inline here rather than being delegated to the
+	// [exec.Operations] object in c.ops. We use an intrinsic here because
+	// this operation doesn't have any externally-visible side effects and so
+	// there's no need for its behavior to vary; if implemented as a real
+	// operation then every test using mock operations would need to
+	// re-implement essentially the same logic.
+	return func(ctx context.Context) (any, bool, tfdiags.Diagnostics) {
+		var diags tfdiags.Diagnostics
+		finalPlan, ok, moreDiags := getFinalPlan(ctx)
+		diags = diags.Append(moreDiags)
+		if !ok {
+			return nil, false, diags
+		}
+
+		// The following checks are just to catch situations where the execution
+		// graph was constructed incorrectly. No user input (valid or otherwise)
+		// should cause these situations to arise, so if either of these
+		// messages appear then that suggests a bug in the planning engine.
+		const errSummary = "Invalid execution graph"
+		if finalPlan.Addr.IsDeposed() {
+			diags = diags.Append(tfdiags.Sourceless(
+				tfdiags.Error,
+				errSummary,
+				fmt.Sprintf("Operation ManagedPrepareDeposed was called with a plan for already-deposed object %s. This is a bug in OpenTofu.", finalPlan.Addr),
+			))
+		}
+		if !finalPlan.PlannedVal.IsNull() {
+			diags = diags.Append(tfdiags.Sourceless(
+				tfdiags.Error,
+				errSummary,
+				fmt.Sprintf("Operation ManagedPrepareDeposed was called with a non-destroy plan for %s. This is a bug in OpenTofu.", finalPlan.Addr),
+			))
+		}
+
+		deposedKey, ok, moreDiags := getDeposedKey(ctx)
+		diags = diags.Append(moreDiags)
+		if !ok {
+			return nil, false, diags
+		}
+		ret := finalPlan.IntoDeposed(deposedKey)
+		return ret, !diags.HasErrors(), diags
+	}
+}
+
+func (c *compiler) compileOpManagedPerformDepose(operands *compilerOperands) nodeExecuteRaw {
 	ops := c.ops
 	getCurrentObj := nextOperand[*exec.ResourceInstanceObject](operands)
+	getDeletePlan := nextOperand[*exec.ManagedResourceObjectFinalPlan](operands)
 	waitForDeps := operands.OperandWaiter()
 	diags := operands.Finish()
 	c.diags = c.diags.Append(diags)
@@ -161,9 +217,25 @@ func (c *compiler) compileOpManagedDepose(operands *compilerOperands) nodeExecut
 		if !ok {
 			return nil, false, diags
 		}
-
-		ret, moreDiags := ops.ManagedDepose(ctx, currentObj)
+		deletePlan, ok, moreDiags := getDeletePlan(ctx)
 		diags = diags.Append(moreDiags)
+		if !ok {
+			return nil, false, diags
+		}
+
+		ret, moreDiags := ops.ManagedPerformDepose(ctx, currentObj, deletePlan)
+		diags = diags.Append(moreDiags)
+
+		if !diags.HasErrors() {
+			// Some correctness checks just to help us catch bugs in the
+			// operations implementation before they cause confusion downstream.
+			if !ret.Addr.IsDeposed() {
+				diags = diags.Append(fmt.Errorf("opManagedPerformDepose result has non-deposed object address %s; this is a bug in OpenTofu", ret.Addr))
+			}
+			if !ret.Addr.InstanceAddr.Equal(currentObj.Addr.InstanceAddr) {
+				diags = diags.Append(fmt.Errorf("opManagedPerformDepose for %s result has wrong instance address %s; this is a bug in OpenTofu", currentObj.Addr.InstanceAddr, ret.Addr.InstanceAddr))
+			}
+		}
 		return ret, !diags.HasErrors(), diags
 	}
 }
@@ -194,6 +266,17 @@ func (c *compiler) compileOpManagedAlreadyDeposed(operands *compilerOperands) no
 
 		ret, moreDiags := ops.ManagedAlreadyDeposed(ctx, instAddr, deposedKey)
 		diags = diags.Append(moreDiags)
+
+		if !diags.HasErrors() {
+			// Some correctness checks just to help us catch bugs in the
+			// operations implementation before they cause confusion downstream.
+			if !ret.Addr.IsDeposed() {
+				diags = diags.Append(fmt.Errorf("opManagedAlreadyDeposed result has non-deposed object address %s; this is a bug in OpenTofu", ret.Addr))
+			}
+			if !ret.Addr.InstanceAddr.Equal(instAddr) {
+				diags = diags.Append(fmt.Errorf("opManagedAlreadyDeposed for %s result has wrong instance address %s; this is a bug in OpenTofu", instAddr.Object(deposedKey), ret.Addr.InstanceAddr))
+			}
+		}
 		return ret, !diags.HasErrors(), diags
 	}
 }

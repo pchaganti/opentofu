@@ -109,8 +109,10 @@ func (c *compiler) Compile() (*CompiledGraph, tfdiags.Diagnostics) {
 			compileFunc = c.compileOpManagedFinalPlan
 		case opManagedApply:
 			compileFunc = c.compileOpManagedApply
-		case opManagedDepose:
-			compileFunc = c.compileOpManagedDepose
+		case opManagedPrepareDepose:
+			compileFunc = c.compileOpManagedPrepareDepose
+		case opManagedPerformDepose:
+			compileFunc = c.compileOpManagedPerformDepose
 		case opManagedAlreadyDeposed:
 			compileFunc = c.compileOpManagedAlreadyDeposed
 		case opManagedChangeAddr:
@@ -213,6 +215,12 @@ func (c *compiler) compileResultRef(ref AnyResultRef) nodeExecuteRaw {
 		index := ref.index
 		return func(_ context.Context) (any, bool, tfdiags.Diagnostics) {
 			return resourceInstAddrs[index], true, nil
+		}
+	case deposedKeyResultRef:
+		deposedKeys := c.sourceGraph.deposedKeys
+		index := ref.index
+		return func(_ context.Context) (any, bool, tfdiags.Diagnostics) {
+			return deposedKeys[index], true, nil
 		}
 	case providerInstAddrResultRef:
 		providerInstAddrs := c.sourceGraph.providerInstAddrs
