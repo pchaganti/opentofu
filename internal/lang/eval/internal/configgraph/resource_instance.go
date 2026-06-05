@@ -37,6 +37,9 @@ type ResourceInstance struct {
 	// is the provider to use when asking for config validation, etc.
 	Provider addrs.Provider
 
+	// Used to ensure marks
+	AdditionalMarks cty.ValueMarks
+
 	// ConfigValuer is a valuer for producing the object value representing
 	// the configuration for this object. How the final configuration value
 	// is chosen is decided by whatever created this object, but most typically
@@ -109,6 +112,9 @@ func (ri *ResourceInstance) ConfigValue(ctx context.Context) (v cty.Value, diags
 		// will only ever receive validated configuration values.
 		return exprs.AsEvalError(cty.DynamicVal), diags
 	}
+
+	// Ensure marks from repetition data (and other sources) make it into the config value
+	configVal = configVal.WithMarks(ri.AdditionalMarks)
 
 	return configVal, diags
 }
@@ -262,7 +268,7 @@ func (ri *ResourceInstance) ResourceInstanceDependencies(ctx context.Context) it
 	// We ignore diagnostics here because callers should always perform a
 	// CheckAll tree walk, including a visit to this resource instance object,
 	// before trusting anything else that any configgraph nodes report.
-	resultVal := diagsHandledElsewhere(ri.Value(ctx))
+	resultVal := diagsHandledElsewhere(ri.ConfigValue(ctx))
 
 	// Our Value method always marks its result as depending on this
 	// resource instance so that any expressions that refer to it will
