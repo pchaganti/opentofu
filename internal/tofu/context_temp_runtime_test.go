@@ -59,7 +59,7 @@ var (
 	ExperimentalFeatureMoved             = ExperimentalFlag{"Missing Moved", false}
 	ExperimentalFeatureRemoved           = ExperimentalFlag{"Missing Removed", false}
 	ExperimentalFeatureSkipDestroy       = ExperimentalFlag{"Missing Lifecycle Destroy", false}
-	ExperimentalFeatureUpgradeState      = ExperimentalFlag{"Missing Upgrade Resource State", false}
+	ExperimentalFeatureUpgradeState      = ExperimentalFlag{"Missing Upgrade Resource State", true}
 	ExperimentalFeatureHooks             = ExperimentalFlag{"Missing Hooks", false}
 	ExperimentalFeatureTarget            = ExperimentalFlag{"Missing Targeting", false}
 	ExperimentalFeatureReplaceTB         = ExperimentalFlag{"Missing replace_triggered_by", false}
@@ -78,6 +78,10 @@ var (
 	ExperimentalFeatureTaint             = ExperimentalFlag{"Missing Taint", false}
 	ExperimentalFeatureErrorHandling     = ExperimentalFlag{"Missing Error Handling", false}
 	ExperimentalFeatureProviderFunctions = ExperimentalFlag{"Missing Provider Defined Functions", false}
+
+	// Obsolete flags indicate a test which depends on a feature we do not
+	// intend to carry forward into the new engine
+	ExperimentalObsoleteFlatAttrs = ExperimentalFlag{"Obsolete Flat Mapped Attributes", false}
 
 	// ExperimentalNewStrategyNeeded is a special experimental flag that
 	// represents that a test is failing not because the underlying behavior

@@ -1582,7 +1582,7 @@ aws_instance.bar:
 }
 
 func TestContext2Refresh_schemaUpgradeFlatmap(t *testing.T) {
-	SkipExperimental(t, ExperimentalFeatureUpgradeState)
+	SkipExperimental(t, ExperimentalFeatureUpgradeState, ExperimentalObsoleteFlatAttrs)
 
 	m := testModule(t, "refresh-schema-upgrade")
 	p := testProvider("test")

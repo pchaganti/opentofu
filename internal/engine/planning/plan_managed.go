@@ -14,9 +14,11 @@ import (
 	"github.com/opentofu/opentofu/internal/addrs"
 	"github.com/opentofu/opentofu/internal/lang/eval"
 	"github.com/opentofu/opentofu/internal/plans"
+	"github.com/opentofu/opentofu/internal/providers"
 	"github.com/opentofu/opentofu/internal/resources"
 	"github.com/opentofu/opentofu/internal/states"
 	"github.com/opentofu/opentofu/internal/tfdiags"
+	ctyjson "github.com/zclconf/go-cty/cty/json"
 )
 
 func (p *planGlue) planDesiredManagedResourceInstance(
@@ -116,13 +118,95 @@ func (p *planGlue) planDesiredManagedResourceInstance(
 		return ret, diags
 	}
 
-	// FIXME: Need to "upgrade" the previous round state before we try to decode it.
-
 	var prevRoundVal cty.Value
 	var prevRoundPrivate []byte
 	prevRoundState := p.planCtx.prevRoundState.SyncWrapper().ResourceInstanceObjectFull(inst.Addr.CurrentObject())
 	if prevRoundState != nil {
-		obj, err := states.DecodeResourceInstanceObjectFull(prevRoundState, schema.Block.ImpliedType())
+		// While we know prevRoundState is non-nil, let's upgrade state, too.
+		// Let's do a schema version comparison before upgrade
+
+		if prevRoundState.SchemaVersion > uint64(schema.Version) {
+			return nil, diags.Append(tfdiags.Sourceless(
+				tfdiags.Error,
+				"Resource instance managed by newer provider version",
+				// This is not a very good error message, but we don't retain enough
+				// information in state to give good feedback on what provider
+				// version might be required here. :(
+				// Or maybe we do. I dunno, I just copied the comment+diag from
+				// upgrade_resource_state.go:upgradeResourceStateTransform :P
+				fmt.Sprintf("The current state of %s was created by a newer provider version than is currently selected. Upgrade the %s provider to work with this state.", inst.Addr, inst.Provider.Type),
+			))
+		}
+
+		upgradeReq := providers.UpgradeResourceStateRequest{
+			TypeName: inst.Addr.Resource.Resource.Type,
+
+			// TODO: The internal schema version representations are all using
+			// uint64 instead of int64, but unsigned integers aren't friendly
+			// to all protobuf target languages so in practice we use int64
+			// on the wire. In future we will change all of our internal
+			// representations to int64 too.
+			Version: int64(prevRoundState.SchemaVersion),
+
+			// We'll make the same assumption as [ResourceInstanceObjectFullSrc] and
+			// assume we'll never encounter a legacy state snapshot that uses AttrsFlat.
+			RawStateJSON: prevRoundState.Value.ValueJSON,
+		}
+
+		upgradeResp := providerClient.UpgradeResourceState(ctx, upgradeReq)
+		diags = diags.Append(upgradeResp.Diagnostics)
+		if diags.HasErrors() {
+			return ret, diags
+		}
+		newState := upgradeResp.UpgradedState
+
+		// After upgrading, the new value must conform to the current schema. When
+		// going over RPC this is actually already ensured by the
+		// marshaling/unmarshaling of the new value, but we'll check it here
+		// anyway for robustness, e.g. for in-process providers.
+		if errs := newState.Type().TestConformance(schema.Block.ImpliedType()); len(errs) > 0 {
+			providerType := inst.Addr.Resource.Resource.ImpliedProvider()
+			for _, err := range errs {
+				diags = diags.Append(tfdiags.Sourceless(
+					tfdiags.Error,
+					"Invalid resource state transformation",
+					fmt.Sprintf("The %s provider changed the state for %s, but produced an invalid result: %s.", providerType, inst.Addr, tfdiags.FormatError(err)),
+				))
+			}
+			return nil, diags
+		}
+
+		src, err := ctyjson.Marshal(newState, schema.Block.ImpliedType())
+		if err != nil {
+			// We just checked for type conformance above, so getting into this
+			// codepath is probably a bug.
+			diags = diags.Append(tfdiags.Sourceless(
+				tfdiags.Error,
+				"Failed to encode result of resource state transformation",
+				fmt.Sprintf("Failed to encode state for %s after resource schema upgrade: %s.", inst.Addr, tfdiags.FormatError(err)),
+			))
+		}
+
+		upgradedPrevState := &states.ResourceInstanceObjectFullSrc{
+			Value: states.ValueJSONWithMetadata{
+				ValueJSON:      src,
+				SensitivePaths: prevRoundState.Value.SensitivePaths,
+			},
+			Private:              prevRoundState.Private,
+			Status:               prevRoundState.Status,
+			ProviderInstanceAddr: prevRoundState.ProviderInstanceAddr,
+			ResourceType:         prevRoundState.ResourceType,
+			SchemaVersion:        uint64(schema.Version),
+			Dependencies:         prevRoundState.Dependencies,
+			CreateBeforeDestroy:  prevRoundState.CreateBeforeDestroy,
+		}
+
+		p.planCtx.upgradedState.SetResourceInstanceObjectFull(inst.Addr.CurrentObject(), upgradedPrevState)
+		// Update the provider instance for the refreshed state only, not the upgraded state
+		upgradedPrevState.ProviderInstanceAddr = *inst.ProviderInstance
+		p.planCtx.refreshedState.SetResourceInstanceObjectFull(inst.Addr.CurrentObject(), upgradedPrevState)
+
+		obj, err := states.DecodeResourceInstanceObjectFull(upgradedPrevState, schema.Block.ImpliedType())
 		if err != nil {
 			diags = diags.Append(tfdiags.AttributeValue(
 				tfdiags.Error,
