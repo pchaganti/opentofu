@@ -8,7 +8,6 @@ package tofu2024
 import (
 	"context"
 	"fmt"
-	"maps"
 
 	"github.com/hashicorp/hcl/v2"
 	"github.com/zclconf/go-cty/cty"
@@ -32,18 +31,19 @@ func compileModuleInstanceResources(
 	moduleInstanceAddr addrs.ModuleInstance,
 	providers evalglue.ProvidersSchema,
 	getResultValue func(context.Context, *configgraph.ResourceInstance, cty.Value, configgraph.Maybe[*configgraph.ProviderInstance], addrs.Set[addrs.AbsResourceInstance]) (cty.Value, tfdiags.Diagnostics),
+	extraMarks cty.ValueMarks,
 ) map[addrs.Resource]*configgraph.Resource {
 	ret := make(map[addrs.Resource]*configgraph.Resource, len(managedConfigs)+len(dataConfigs)+len(ephemeralConfigs))
 	for _, rc := range managedConfigs {
-		addr, rsrc := compileModuleInstanceResource(ctx, rc, declScope, moduleProviders, moduleInstanceAddr, providers, getResultValue)
+		addr, rsrc := compileModuleInstanceResource(ctx, rc, declScope, moduleProviders, moduleInstanceAddr, providers, getResultValue, extraMarks)
 		ret[addr] = rsrc
 	}
 	for _, rc := range dataConfigs {
-		addr, rsrc := compileModuleInstanceResource(ctx, rc, declScope, moduleProviders, moduleInstanceAddr, providers, getResultValue)
+		addr, rsrc := compileModuleInstanceResource(ctx, rc, declScope, moduleProviders, moduleInstanceAddr, providers, getResultValue, extraMarks)
 		ret[addr] = rsrc
 	}
 	for _, rc := range ephemeralConfigs {
-		addr, rsrc := compileModuleInstanceResource(ctx, rc, declScope, moduleProviders, moduleInstanceAddr, providers, getResultValue)
+		addr, rsrc := compileModuleInstanceResource(ctx, rc, declScope, moduleProviders, moduleInstanceAddr, providers, getResultValue, extraMarks)
 		ret[addr] = rsrc
 	}
 	return ret
@@ -57,6 +57,7 @@ func compileModuleInstanceResource(
 	moduleInstanceAddr addrs.ModuleInstance,
 	providers evalglue.ProvidersSchema,
 	getResultValue func(context.Context, *configgraph.ResourceInstance, cty.Value, configgraph.Maybe[*configgraph.ProviderInstance], addrs.Set[addrs.AbsResourceInstance]) (cty.Value, tfdiags.Diagnostics),
+	extraMarks cty.ValueMarks,
 ) (addrs.Resource, *configgraph.Resource) {
 	resourceAddr := config.Addr()
 	absAddr := moduleInstanceAddr.Resource(resourceAddr.Mode, resourceAddr.Type, resourceAddr.Name)
@@ -83,6 +84,14 @@ func compileModuleInstanceResource(
 		configEvalable = exprs.EvalableHCLBodyWithDynamicBlocks(config.Config, spec)
 	}
 
+	// We compile the depends_on argument here but don't evaluate it yet.
+	// It actually gets evaluated inside the "instance selector" we'll
+	// construct below, when it gets asked for its instances, and include
+	// the resulting marks on the count.index, each.key, and/or each.value
+	// results because that means it'll get evaluated only once per resource
+	// instead of separately for each resource instance.
+	sharedDeps, compileInstanceDeps := compileDependsOn(config.DependsOn, declScope, extraMarks)
+
 	ret := &configgraph.Resource{
 		Addr:      absAddr,
 		DeclRange: tfdiags.SourceRangeFromHCL(config.DeclRange),
@@ -90,7 +99,7 @@ func compileModuleInstanceResource(
 		// Our instance selector depends on which of the repetition metaarguments
 		// are set, if any. We assume that package configs allows at most one
 		// of these to be set for each resource config.
-		InstanceSelector: compileInstanceSelector(ctx, declScope, config.ForEach, config.Count, config.Enabled),
+		InstanceSelector: compileInstanceSelector(ctx, declScope, config.ForEach, config.Count, config.Enabled, sharedDeps),
 
 		// The [configgraph.Resource] implementation will call back to this
 		// for each child instance it discovers through [InstanceSelector],
@@ -99,6 +108,7 @@ func compileModuleInstanceResource(
 		CompileResourceInstance: func(ctx context.Context, key addrs.InstanceKey, repData instances.RepetitionData) *configgraph.ResourceInstance {
 			localScope := instanceLocalScope(declScope, repData)
 			providerRef := compileProviderConfigRef(ctx, moduleProviders, config.ProviderConfigAddr(), config.ProviderConfigRef, localScope)
+			instanceDeps := compileInstanceDeps(localScope)
 
 			// For now we require a literal boolean constant in
 			// create_before_destroy to match how the old implementation treated
@@ -126,19 +136,34 @@ func compileModuleInstanceResource(
 				)
 			}
 
-			additionalMarks := cty.ValueMarks{}
-			// This adds an implicit depends_on from marks in repetition data
-			maps.Copy(additionalMarks, repData.CountIndex.Marks())
-			maps.Copy(additionalMarks, repData.EachKey.Marks())
-			maps.Copy(additionalMarks, repData.EachValue.Marks())
+			// Note that repetitionMarks also incorporates any marks from the
+			// depends_on argument, which got evaluated as part of the instance
+			// selector just as a convenient once-per-resource evaluation hook.
+			repetitionMarks := repData.AllValueMarks()
+
+			// Some language features related to resource blocks cause extra
+			// transformations of the configuration value, so we'll deal
+			// with those by transforming what we get from just evaluating
+			// the main config body.
+			configValuer := configgraph.ValuerOnce(exprs.DerivedValuerContext(
+				exprs.NewClosure(configEvalable, localScope),
+				func(ctx context.Context, v cty.Value, diags tfdiags.Diagnostics) (cty.Value, tfdiags.Diagnostics) {
+					if len(repetitionMarks) != 0 {
+						v = v.WithMarks(repetitionMarks)
+					}
+					instDepMarks, moreDiags := instanceDeps.Marks(ctx)
+					diags = diags.Append(moreDiags)
+					if len(instDepMarks) != 0 {
+						v = v.WithMarks(instDepMarks)
+					}
+					return v, diags
+				},
+			))
 
 			inst := &configgraph.ResourceInstance{
-				Addr:            absAddr.Instance(key),
-				Provider:        config.Provider,
-				AdditionalMarks: additionalMarks,
-				ConfigValuer: configgraph.ValuerOnce(exprs.NewClosure(
-					configEvalable, localScope,
-				)),
+				Addr:                      absAddr.Instance(key),
+				Provider:                  config.Provider,
+				ConfigValuer:              configValuer,
 				ProviderInstanceValuer:    configgraph.ValuerOnce(providerRef),
 				CreateBeforeDestroyValuer: cbdValuer,
 			}

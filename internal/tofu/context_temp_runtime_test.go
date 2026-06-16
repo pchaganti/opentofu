@@ -64,7 +64,7 @@ var (
 	ExperimentalFeatureTarget            = ExperimentalFlag{"Missing Targeting", false}
 	ExperimentalFeatureReplaceTB         = ExperimentalFlag{"Missing replace_triggered_by", false}
 	ExperimentalFeatureProvisioner       = ExperimentalFlag{"Missing Provisioners", false}
-	ExperimentalFeatureDependsOn         = ExperimentalFlag{"Missing Depends On", false}
+	ExperimentalFeatureDependsOn         = ExperimentalFlag{"Missing Depends On", true}
 	ExperimentalFeatureIgnoreChanges     = ExperimentalFlag{"Missing Ignore Changes", false}
 	ExperimentalFeatureVarCondition      = ExperimentalFlag{"Missing Variable Condiitions", false}
 	ExperimentalFeaturePathAttrs         = ExperimentalFlag{"Missing Path/Terraform/Tofu Attrs", false}
@@ -77,7 +77,7 @@ var (
 	ExperimentalFeatureProviderMeta      = ExperimentalFlag{"Missing Provider Meta", false}
 	ExperimentalFeatureTaint             = ExperimentalFlag{"Missing Taint", false}
 	ExperimentalFeatureErrorHandling     = ExperimentalFlag{"Missing Error Handling", false}
-	ExperimentalFeatureProviderFunctions = ExperimentalFlag{"Missing Provider Defined Functions", false}
+	ExperimentalFeatureProviderFunctions = ExperimentalFlag{"Missing Provider Defined Functions", true}
 
 	// Obsolete flags indicate a test which depends on a feature we do not
 	// intend to carry forward into the new engine

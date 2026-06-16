@@ -7,6 +7,7 @@ package configgraph
 
 import (
 	"iter"
+	"maps"
 
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/ctymarks"
@@ -34,6 +35,15 @@ import (
 type ResourceInstanceMark struct {
 	// instance is a pointer to the resource instance this mark relates to.
 	instance *ResourceInstance
+}
+
+// NewResourceInstanceMark constructs a new [ResourceInstanceMark] referring
+// to the given resource instance.
+//
+// This is here so that code in other packages can describe dependencies caused
+// by language features that this package is not aware of.
+func NewResourceInstanceMark(inst *ResourceInstance) ResourceInstanceMark {
+	return ResourceInstanceMark{inst}
 }
 
 // ContributingResourceInstances returns an iterable sequence of all of the
@@ -129,4 +139,29 @@ func ResourceInstanceAddrs(insts iter.Seq[*ResourceInstance]) iter.Seq[addrs.Abs
 			}
 		}
 	}
+}
+
+// IsDependencyMark returns true if the given value is something that could
+// be used to mark a [cty.Value] to represent a "dependency".
+//
+// "Dependency" here means that some sort of externally-visible change must
+// be made before the associated value could be used during the apply phase.
+//
+// Currently only values of type [ResourceInstanceMark] are considered to be
+// dependency-related, but that might change in future if we begin tracking
+// other information about how values relate to changes that will happen during
+// the apply phase.
+func IsDependencyMark(mark any) bool {
+	// Currently only [ResourceInstanceMark] is considered to be
+	// "dependency-related".
+	_, ok := mark.(ResourceInstanceMark)
+	return ok
+}
+
+// RemoveNonDependencyMarks modifies the given mark set in-place to remove
+// any marks for which [IsDependencyMark] returns true.
+func RemoveNonDependencyMarks(from cty.ValueMarks) {
+	maps.DeleteFunc(from, func(mark any, _ struct{}) bool {
+		return !IsDependencyMark(mark)
+	})
 }

@@ -25,8 +25,8 @@ func compileModuleInstanceProviderConfigs(
 	declScope exprs.Scope,
 	reqdProviders map[string]*configs.RequiredProvider,
 	moduleInstanceAddr addrs.ModuleInstance,
-	providers evalglue.ProvidersSchema,
-	validateProviderConfig func(context.Context, addrs.Provider, cty.Value) tfdiags.Diagnostics,
+	providers evalglue.Providers,
+	extraMarks cty.ValueMarks,
 ) map[addrs.LocalProviderConfig]*configgraph.ProviderConfig {
 	ret := make(map[addrs.LocalProviderConfig]*configgraph.ProviderConfig, len(configs))
 
@@ -35,7 +35,7 @@ func compileModuleInstanceProviderConfigs(
 			LocalName: config.Name,
 			Alias:     config.Alias,
 		}
-		ret[localAddr] = compileProviderConfig(ctx, config, declScope, reqdProviders, moduleInstanceAddr, providers, validateProviderConfig)
+		ret[localAddr] = compileProviderConfig(ctx, config, declScope, reqdProviders, moduleInstanceAddr, providers, extraMarks)
 	}
 
 	return ret
@@ -47,8 +47,8 @@ func compileProviderConfig(
 	declScope exprs.Scope,
 	reqdProviders map[string]*configs.RequiredProvider,
 	moduleInstanceAddr addrs.ModuleInstance,
-	providers evalglue.ProvidersSchema,
-	validateProviderConfig func(context.Context, addrs.Provider, cty.Value) tfdiags.Diagnostics,
+	providers evalglue.Providers,
+	extraMarks cty.ValueMarks,
 ) *configgraph.ProviderConfig {
 	providerAddr := addrs.NewDefaultProvider(config.Name)
 	if reqd, ok := reqdProviders[config.Name]; ok {
@@ -64,6 +64,14 @@ func compileProviderConfig(
 		configEvalable = exprs.EvalableHCLBodyWithDynamicBlocks(config.Config, spec)
 	}
 
+	// Provider configuration blocks don't have an explicit depends_on argument,
+	// but to make this as similar as possible to how we handle other similar
+	// block types we'll use the depends_on compiler with an always-empty
+	// traversal set as our vehicle for getting the extraMarks into the
+	// instance selector and then into the CompileProviderInstance callback
+	// below.
+	sharedDeps, compileInstanceDeps := compileDependsOn(nil, declScope, extraMarks)
+
 	return &configgraph.ProviderConfig{
 		Addr: addrs.AbsProviderConfigCorrect{
 			Module: moduleInstanceAddr,
@@ -73,9 +81,35 @@ func compileProviderConfig(
 			},
 		},
 		ProviderAddr:     providerAddr,
-		InstanceSelector: compileInstanceSelector(ctx, declScope, config.ForEach, nil, nil),
+		InstanceSelector: compileInstanceSelector(ctx, declScope, config.ForEach, nil, nil, sharedDeps),
 		CompileProviderInstance: func(ctx context.Context, key addrs.InstanceKey, repData instances.RepetitionData) *configgraph.ProviderInstance {
 			instanceScope := instanceLocalScope(declScope, repData)
+			instanceDeps := compileInstanceDeps(instanceScope)
+
+			// Note that repetitionMarks also incorporates any marks from the
+			// depends_on argument, which got evaluated as part of the instance
+			// selector just as a convenient once-per-resource evaluation hook.
+			repetitionMarks := repData.AllValueMarks()
+
+			// Some language features related to resource blocks cause extra
+			// transformations of the configuration value, so we'll deal
+			// with those by transforming what we get from just evaluating
+			// the main config body.
+			configValuer := configgraph.ValuerOnce(exprs.DerivedValuerContext(
+				exprs.NewClosure(configEvalable, instanceScope),
+				func(ctx context.Context, v cty.Value, diags tfdiags.Diagnostics) (cty.Value, tfdiags.Diagnostics) {
+					if len(repetitionMarks) != 0 {
+						v = v.WithMarks(repetitionMarks)
+					}
+					instDepMarks, moreDiags := instanceDeps.Marks(ctx)
+					diags = diags.Append(moreDiags)
+					if len(instDepMarks) != 0 {
+						v = v.WithMarks(instDepMarks)
+					}
+					return v, diags
+				},
+			))
+
 			return &configgraph.ProviderInstance{
 				Addr: addrs.AbsProviderInstanceCorrect{
 					Config: addrs.AbsProviderConfigCorrect{
@@ -88,11 +122,9 @@ func compileProviderConfig(
 					Key: key,
 				},
 				ProviderAddr: providerAddr,
-				ConfigValuer: configgraph.ValuerOnce(
-					exprs.NewClosure(configEvalable, instanceScope),
-				),
+				ConfigValuer: configValuer,
 				ValidateConfig: func(ctx context.Context, v cty.Value) tfdiags.Diagnostics {
-					return validateProviderConfig(ctx, providerAddr, v)
+					return providers.ValidateProviderConfig(ctx, providerAddr, v)
 				},
 			}
 		},

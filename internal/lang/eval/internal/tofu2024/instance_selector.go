@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"math"
 	"math/big"
 
@@ -24,7 +25,7 @@ import (
 	"github.com/opentofu/opentofu/internal/tfdiags"
 )
 
-func compileInstanceSelector(ctx context.Context, declScope exprs.Scope, forEachExpr hcl.Expression, countExpr hcl.Expression, enabledExpr hcl.Expression) configgraph.InstanceSelector {
+func compileInstanceSelector(ctx context.Context, declScope exprs.Scope, forEachExpr hcl.Expression, countExpr hcl.Expression, enabledExpr hcl.Expression, deps dependsOn) configgraph.InstanceSelector {
 	// We don't current verify that only one of the given expressions is set
 	// because we expect the configs package to check that.
 
@@ -32,48 +33,61 @@ func compileInstanceSelector(ctx context.Context, declScope exprs.Scope, forEach
 		return compileInstanceSelectorForEach(ctx, exprs.NewClosure(
 			exprs.EvalableHCLExpression(forEachExpr),
 			declScope,
-		))
+		), deps)
 	}
 	if countExpr != nil {
 		return compileInstanceSelectorCount(ctx, exprs.NewClosure(
 			exprs.EvalableHCLExpression(countExpr),
 			declScope,
-		))
+		), deps)
 	}
 	if enabledExpr != nil {
 		return compileInstanceSelectorEnabled(ctx, exprs.NewClosure(
 			exprs.EvalableHCLExpression(enabledExpr),
 			declScope,
-		))
+		), deps)
 	}
-	return compileInstanceSelectorSingleton(ctx)
+	return compileInstanceSelectorSingleton(ctx, deps)
 }
 
-func compileInstanceSelectorSingleton(_ context.Context) configgraph.InstanceSelector {
+func compileInstanceSelectorSingleton(_ context.Context, deps dependsOn) configgraph.InstanceSelector {
 	return &instanceSelector{
 		keyType:     addrs.NoKeyType,
 		sourceRange: nil,
 		selectInstances: func(ctx context.Context) (configgraph.Maybe[configgraph.InstancesSeq], cty.ValueMarks, tfdiags.Diagnostics) {
+			depMarks, diags := deps.Marks(ctx)
 			seq := func(yield func(addrs.InstanceKey, instances.RepetitionData) bool) {
 				yield(addrs.NoKey, instances.RepetitionData{})
 			}
-			return configgraph.Known(seq), nil, nil
+			return configgraph.Known(seq), depMarks, diags
 		},
 	}
 }
 
-func compileInstanceSelectorCount(_ context.Context, countValuer exprs.Valuer) configgraph.InstanceSelector {
+func compileInstanceSelectorCount(_ context.Context, countValuer exprs.Valuer, deps dependsOn) configgraph.InstanceSelector {
 	countValuer = configgraph.ValuerOnce(countValuer)
 	return &instanceSelector{
 		keyType:     addrs.IntKeyType,
 		sourceRange: countValuer.ValueSourceRange(),
 		selectInstances: func(ctx context.Context) (configgraph.Maybe[configgraph.InstancesSeq], cty.ValueMarks, tfdiags.Diagnostics) {
 			var count int
+
 			countVal, diags := countValuer.Value(ctx)
 			if diags.HasErrors() {
 				return nil, nil, diags
 			}
+
 			countVal, marks := countVal.Unmark()
+
+			depMarks, moreDiags := deps.Marks(ctx)
+			diags = diags.Append(moreDiags)
+			if len(depMarks) != 0 {
+				if marks == nil {
+					marks = make(cty.ValueMarks)
+				}
+				maps.Copy(marks, depMarks)
+			}
+
 			countVal, err := convert.Convert(countVal, cty.Number)
 			if err == nil && !countVal.IsKnown() {
 				// We represent "unknown" by returning a nil configgraph.Maybe
@@ -133,7 +147,7 @@ func compileInstanceSelectorCount(_ context.Context, countValuer exprs.Valuer) c
 	}
 }
 
-func compileInstanceSelectorEnabled(_ context.Context, enabledValuer exprs.Valuer) configgraph.InstanceSelector {
+func compileInstanceSelectorEnabled(_ context.Context, enabledValuer exprs.Valuer, deps dependsOn) configgraph.InstanceSelector {
 	enabledValuer = configgraph.ValuerOnce(enabledValuer)
 	return &instanceSelector{
 		keyType:     addrs.NoKeyType,
@@ -145,6 +159,16 @@ func compileInstanceSelectorEnabled(_ context.Context, enabledValuer exprs.Value
 				return nil, nil, diags
 			}
 			enabledVal, marks := enabledVal.Unmark()
+
+			depMarks, moreDiags := deps.Marks(ctx)
+			diags = diags.Append(moreDiags)
+			if len(depMarks) != 0 {
+				if marks == nil {
+					marks = make(cty.ValueMarks)
+				}
+				maps.Copy(marks, depMarks)
+			}
+
 			enabledVal, err := convert.Convert(enabledVal, cty.Bool)
 			if err == nil && !enabledVal.IsKnown() {
 				// We represent "unknown" by returning a nil configgraph.Maybe
@@ -179,7 +203,7 @@ func compileInstanceSelectorEnabled(_ context.Context, enabledValuer exprs.Value
 	}
 }
 
-func compileInstanceSelectorForEach(_ context.Context, forEachValuer exprs.Valuer) configgraph.InstanceSelector {
+func compileInstanceSelectorForEach(_ context.Context, forEachValuer exprs.Valuer, deps dependsOn) configgraph.InstanceSelector {
 	forEachValuer = configgraph.ValuerOnce(forEachValuer)
 	return &instanceSelector{
 		keyType:     addrs.StringKeyType,
@@ -192,6 +216,16 @@ func compileInstanceSelectorForEach(_ context.Context, forEachValuer exprs.Value
 				return nil, nil, diags
 			}
 			rawVal, marks := rawVal.Unmark()
+
+			depMarks, moreDiags := deps.Marks(ctx)
+			diags = diags.Append(moreDiags)
+			if len(depMarks) != 0 {
+				if marks == nil {
+					marks = make(cty.ValueMarks)
+				}
+				maps.Copy(marks, depMarks)
+			}
+
 			if rawVal.IsNull() {
 				diags = diags.Append(&hcl.Diagnostic{
 					Severity: hcl.DiagError,

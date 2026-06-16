@@ -6,12 +6,16 @@
 package tofu2024
 
 import (
+	"context"
 	"fmt"
+	"iter"
 	"strings"
 
 	"github.com/hashicorp/hcl/v2"
 	"github.com/opentofu/opentofu/internal/addrs"
 	"github.com/opentofu/opentofu/internal/instances"
+	"github.com/opentofu/opentofu/internal/lang/eval/internal/configgraph"
+	"github.com/opentofu/opentofu/internal/lang/eval/internal/evalglue"
 	"github.com/opentofu/opentofu/internal/lang/exprs"
 	"github.com/opentofu/opentofu/internal/tfdiags"
 	"github.com/zclconf/go-cty/cty"
@@ -36,56 +40,67 @@ import (
 //    https://github.com/opentofu/opentofu/pull/2262
 
 type moduleInstanceScope struct {
-	inst          *CompiledModuleInstance
-	coreFunctions map[string]function.Function
-
-	// TODO: some way to interact with provider-defined functions too, but
-	// that's tricky since OpenTofu decided to call them on _configured_
-	// providers rather than unconfigured ones and this evaluator otherwise
-	// only uses unconfigured providers... so I guess we'll need some sort of
-	// upcall glue to ask whatever code is orchestrating the plan or apply
-	// phase to call a function on our behalf, or similar, and arrange
-	// for functions in the [ConfigInstance.PrepareToPlan] phase to return
-	// marked values so we can detect the additional
-	// resource-to-provider-instance dependencies those calls imply.
-	//
-	// (It seems unfortunate that this additional complexity only really
-	// currently benefits the opentofu/lua provider, which doesn't seem
-	// to be widely used. It would be far simpler if we could just always
-	// call functions on the same unconfigured providers we're using for
-	// schema fetching and config validation.)
+	inst              *CompiledModuleInstance
+	coreFunctions     map[string]function.Function
+	providerFunctions func(context.Context, addrs.ProviderFunction, hcl.Range) (function.Function, tfdiags.Diagnostics)
 }
 
 var _ exprs.Scope = (*moduleInstanceScope)(nil)
 
 // ResolveFunc implements exprs.Scope.
-func (m *moduleInstanceScope) ResolveFunc(call *hcl.StaticCall) (function.Function, tfdiags.Diagnostics) {
+func (m *moduleInstanceScope) ResolveFunc(ctx context.Context, call *hcl.StaticCall) (function.Function, tfdiags.Diagnostics) {
 	var diags tfdiags.Diagnostics
 
-	if strings.Contains(call.Name, "::") {
-		// TODO: Implement provider-defined functions, which use the
-		// "provider::" prefix.
+	parsed := addrs.ParseFunction(call.Name)
+	// Ensure that there is at least one namespace (default core)
+	parsed = parsed.FullyQualified()
+
+	switch parsed.Namespaces[0] {
+	case addrs.FunctionNamespaceCore:
+		fn, ok := m.coreFunctions[call.Name]
+		if !ok {
+			diags = diags.Append(&hcl.Diagnostic{
+				Severity: hcl.DiagError,
+				Summary:  "Call to unsupported function",
+				Detail:   fmt.Sprintf("There is no core function named %q in this version of OpenTofu.", call.Name),
+				Subject:  &call.NameRange,
+			})
+			return function.Function{}, diags
+		}
+
+		return fn, diags
+	case addrs.FunctionNamespaceProvider:
+		pf, err := parsed.AsProviderFunction()
+		if err != nil {
+			diags = diags.Append(&hcl.Diagnostic{
+				Severity: hcl.DiagError,
+				Summary:  "Invalid function format",
+				Detail:   err.Error(),
+				Subject:  &call.NameRange,
+			})
+			return function.Function{}, diags
+		}
+		if m.providerFunctions == nil {
+			diags = diags.Append(&hcl.Diagnostic{
+				Severity: hcl.DiagError,
+				Summary:  "Provider functions not supported here",
+				Detail:   "Provider functions may only be used in specific contexts",
+				Subject:  &call.NameRange,
+			})
+			return function.Function{}, diags
+		}
+		fn, moreDiags := m.providerFunctions(ctx, pf, call.NameRange)
+		diags = diags.Append(moreDiags)
+		return fn, diags
+	default:
 		diags = diags.Append(&hcl.Diagnostic{
 			Severity: hcl.DiagError,
-			Summary:  "Call to unsupported function",
-			Detail:   "This new experimental codepath doesn't support non-core functions yet.",
+			Summary:  "Unknown function namespace",
+			Detail:   fmt.Sprintf("Function %q does not exist within a valid namespace (%s)", parsed, strings.Join(addrs.FunctionNamespaces, ",")),
 			Subject:  &call.NameRange,
 		})
 		return function.Function{}, diags
 	}
-
-	fn, ok := m.coreFunctions[call.Name]
-	if !ok {
-		diags = diags.Append(&hcl.Diagnostic{
-			Severity: hcl.DiagError,
-			Summary:  "Call to unsupported function",
-			Detail:   fmt.Sprintf("There is no core function named %q in this version of OpenTofu.", call.Name),
-			Subject:  &call.NameRange,
-		})
-		return function.Function{}, diags
-	}
-
-	return fn, diags
 }
 
 // ResolveAttr implements exprs.Scope.
@@ -436,8 +451,8 @@ func (i *inputVariableValidationScope) ResolveAttr(ref hcl.TraverseAttr) (exprs.
 }
 
 // ResolveFunc implements exprs.Scope.
-func (i *inputVariableValidationScope) ResolveFunc(call *hcl.StaticCall) (function.Function, tfdiags.Diagnostics) {
-	return i.parentScope.ResolveFunc(call)
+func (i *inputVariableValidationScope) ResolveFunc(ctx context.Context, call *hcl.StaticCall) (function.Function, tfdiags.Diagnostics) {
+	return i.parentScope.ResolveFunc(ctx, call)
 }
 
 func instanceLocalScope(parentScope exprs.Scope, repData instances.RepetitionData) exprs.Scope {
@@ -501,9 +516,9 @@ func (i *instanceOverlayScope) ResolveAttr(ref hcl.TraverseAttr) (exprs.Attribut
 }
 
 // ResolveFunc implements exprs.Scope.
-func (i *instanceOverlayScope) ResolveFunc(call *hcl.StaticCall) (function.Function, tfdiags.Diagnostics) {
+func (i *instanceOverlayScope) ResolveFunc(ctx context.Context, call *hcl.StaticCall) (function.Function, tfdiags.Diagnostics) {
 	// no extra functions in this local scope
-	return i.parent.ResolveFunc(call)
+	return i.parent.ResolveFunc(ctx, call)
 }
 
 type instanceLocalSymbolTable struct {
@@ -572,5 +587,109 @@ func (i *instanceLocalSymbolTable) ResolveAttr(ref hcl.TraverseAttr) (exprs.Attr
 			Subject:  &ref.SrcRange,
 		})
 		return nil, diags
+	}
+}
+
+// moduleCallResourceInstances is a shim that allows a caller that is holding
+// an [exprs.Scope] whose concrete type is [*moduleInstanceScope] (or one of
+// our several wrappers of it) to enumerate all of the resource instances
+// declared beneath the given module call, using direct analysis of the compiled
+// module structure instead of using expression evaluation.
+//
+// This function needs to be able to resolve instance selection expressions
+// for any module calls and resources starting at the given call address and
+// so the given context must have a valid grapheval worker.
+//
+// This is here to help deal with the special treatment we give to module call
+// references in a depends_on argument, where we treat that as depending on
+// every resource instance declared inside the module regardless of whether
+// any of the output values depend on those resource instances. This is a quirky
+// oddity we inherited from the old language runtime that we're preserving for
+// backward-compatibility.
+//
+// If the given scope is not a known wrapper of [*moduleInstanceScope] then this
+// just returns a zero-length sequence so that tests which don't involve this
+// special behavior can safely use a testing-specific fake scope instead of the
+// full scope implementation.
+func moduleCallResourceInstancesDeep(ctx context.Context, scope exprs.Scope, callAddr addrs.ModuleCall) iter.Seq[*configgraph.ResourceInstance] {
+	thisModuleInst := compiledModuleInstanceFromScope(scope)
+	if thisModuleInst == nil {
+		return func(yield func(*configgraph.ResourceInstance) bool) {}
+	}
+
+	return func(yield func(*configgraph.ResourceInstance) bool) {
+		for _, calledModuleInst := range thisModuleInst.ChildModuleInstancesForCall(ctx, callAddr) {
+			// TODO: using evalglue.ResourceInstancesDeep here is probably not right
+			// because it immediately starts a new grapheval worker without also
+			// starting a new goroutine. We need to figure out how the non-goroutine
+			// coroutines started by for loops over iter.Seq fit in to the grapheval
+			// rules: they have some characteristics in common with goroutines but
+			// are not capable of running asynchronously with the calling goroutine.
+			for resourceInst := range evalglue.ResourceInstancesDeep(ctx, calledModuleInst) {
+				if !yield(resourceInst) {
+					return
+				}
+			}
+		}
+	}
+}
+
+// moduleCallResourceInstances is a shim that allows a caller that is holding
+// an [exprs.Scope] whose concrete type is [*moduleInstanceScope] (or one of
+// our several wrappers of it) to enumerate all of the resource instances
+// declared beneath the given module call instance, using direct analysis of
+// the compiled module structure instead of using expression evaluation.
+//
+// This function needs to be able to resolve instance selection expressions
+// for any module calls and resources starting at the given call address and
+// so the given context must have a valid grapheval worker.
+//
+// This is here to help deal with the special treatment we give to module call
+// references in a depends_on argument, where we treat that as depending on
+// every resource instance declared inside the module regardless of whether
+// any of the output values depend on those resource instances. This is a quirky
+// oddity we inherited from the old language runtime that we're preserving for
+// backward-compatibility.
+//
+// If the given scope is not a known wrapper of [*moduleInstanceScope] then this
+// just returns a zero-length sequence so that tests which don't involve this
+// special behavior can safely use a testing-specific fake scope instead of the
+// full scope implementation.
+func moduleCallInstanceResourceInstancesDeep(ctx context.Context, scope exprs.Scope, callInstAddr addrs.ModuleCallInstance) iter.Seq[*configgraph.ResourceInstance] {
+	thisModuleInst := compiledModuleInstanceFromScope(scope)
+	if thisModuleInst == nil {
+		return func(yield func(*configgraph.ResourceInstance) bool) {}
+	}
+
+	calledModuleInst := thisModuleInst.ChildModuleInstance(ctx, callInstAddr)
+	if calledModuleInst == nil {
+		// No such instance then, and so no resource instances beneath it.
+		return func(yield func(*configgraph.ResourceInstance) bool) {}
+	}
+	// TODO: using evalglue.ResourceInstancesDeep here is probably not right
+	// because it immediately starts a new grapheval worker without also
+	// starting a new goroutine. We need to figure out how the non-goroutine
+	// coroutines started by for loops over iter.Seq fit in to the grapheval
+	// rules: they have some characteristics in common with goroutines but
+	// are not capable of running asynchronously with the calling goroutine.
+	return evalglue.ResourceInstancesDeep(ctx, calledModuleInst)
+}
+
+// compiledModuleInstanceFromScope knows how to extract a
+// *CompiledModuleInstance from the various concrete [exprs.Scope]
+// implementations in this package.
+//
+// If the given scope is not one this function knows how to handle then it
+// returns nil.
+func compiledModuleInstanceFromScope(scope exprs.Scope) *CompiledModuleInstance {
+	switch scope := scope.(type) {
+	case *moduleInstanceScope:
+		return scope.inst
+	case *instanceOverlayScope:
+		return compiledModuleInstanceFromScope(scope.parent)
+	case *inputVariableValidationScope:
+		return compiledModuleInstanceFromScope(scope.parentScope)
+	default:
+		return nil
 	}
 }

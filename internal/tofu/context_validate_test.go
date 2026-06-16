@@ -118,6 +118,8 @@ func TestContext2Validate_varNoDefaultExplicitType(t *testing.T) {
 }
 
 func TestContext2Validate_computedVar(t *testing.T) {
+	SkipExperimental(t, ExperimentalFeatureValidate)
+
 	p := testProvider("aws")
 	p.GetProviderSchemaResponse = &providers.GetProviderSchemaResponse{
 		Provider: providers.Schema{
@@ -1398,7 +1400,7 @@ output "out" {
 }
 
 func TestContext2Validate_invalidDependsOnResourceRef(t *testing.T) {
-	SkipExperimental(t, ExperimentalFeatureDependsOn)
+	SkipExperimental(t, ExperimentalFeatureDependsOn, ExperimentalFeatureValidate)
 	// This test is verifying that we raise an error if depends_on
 	// refers to something that doesn't exist in configuration.
 	m := testModuleInline(t, map[string]string{
@@ -1717,7 +1719,7 @@ output "out" {
 }
 
 func TestContext2Validate_invalidModuleDependsOn(t *testing.T) {
-	SkipExperimental(t, ExperimentalFeatureDependsOn)
+	SkipExperimental(t, ExperimentalFeatureDependsOn, ExperimentalFeatureValidate)
 
 	// validate module and output depends_on
 	m := testModuleInline(t, map[string]string{
@@ -1757,7 +1759,7 @@ output "out" {
 }
 
 func TestContext2Validate_invalidOutputDependsOn(t *testing.T) {
-	SkipExperimental(t, ExperimentalFeatureDependsOn)
+	SkipExperimental(t, ExperimentalFeatureDependsOn, ExperimentalFeatureValidate)
 
 	// validate module and output depends_on
 	m := testModuleInline(t, map[string]string{
