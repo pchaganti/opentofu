@@ -163,6 +163,7 @@ func TestContext2Plan_createBefore_deposed(t *testing.T) {
 		changes[k] = change
 	}
 	if !reflect.DeepEqual(got, want) {
+		SkipExperimental(t, ExperimentalChangeNoNoOp) // new runtime intentionally omits the NoOp change for the non-deposed object
 		t.Fatalf("wrong resource instance object changes in plan\ngot: %s\nwant: %s", spew.Sdump(got), spew.Sdump(want))
 	}
 
@@ -8007,7 +8008,7 @@ resource "test_instance" "a" {
 }
 
 func TestContext2Plan_dataRemovalNoProvider(t *testing.T) {
-	SkipExperimental(t, ExperimentalBugStateProvider)
+	SkipExperimental(t, ExperimentalBugStateProvider, ExperimentalBugDataResource)
 	m := testModuleInline(t, map[string]string{
 		"main.tf": `
 resource "test_instance" "a" {

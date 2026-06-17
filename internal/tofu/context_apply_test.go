@@ -993,6 +993,7 @@ func TestContext2Apply_createBeforeDestroy(t *testing.T) {
 		t.Logf("%s", legacyDiffComparisonString(plan.Changes))
 	}
 
+	SkipExperimental(t, ExperimentalBugMissingProvider)
 	state, diags = ctx.Apply(context.Background(), plan, m, nil)
 	if diags.HasErrors() {
 		t.Fatalf("diags: %s", diags.Err())
@@ -1012,7 +1013,6 @@ func TestContext2Apply_createBeforeDestroy(t *testing.T) {
 }
 
 func TestContext2Apply_createBeforeDestroyUpdate(t *testing.T) {
-	SkipExperimental(t, ExperimentalBugSpuriousReplace)
 	m := testModule(t, "apply-good-create-before-update")
 	p := testProvider("aws")
 	p.PlanResourceChangeFn = testDiffFn
@@ -1069,6 +1069,7 @@ func TestContext2Apply_createBeforeDestroyUpdate(t *testing.T) {
 		}, nil),
 	})
 
+	SkipExperimental(t, ExperimentalBugMissingProvider, ExperimentalBugExecGraph2)
 	plan, diags := ctx.Plan(context.Background(), m, state, DefaultPlanOpts)
 	if diags.HasErrors() {
 		t.Fatalf("diags: %s", diags.Err())
@@ -1137,6 +1138,7 @@ func TestContext2Apply_createBeforeDestroy_dependsNonCBD(t *testing.T) {
 		t.Logf("%s", legacyDiffComparisonString(plan.Changes))
 	}
 
+	SkipExperimental(t, ExperimentalBugMissingProvider)
 	state, diags = ctx.Apply(context.Background(), plan, m, nil)
 	if diags.HasErrors() {
 		t.Fatalf("diags: %s", diags.Err())
@@ -1160,6 +1162,7 @@ aws_instance.foo:
 	`)
 
 	// Check that create_before_destroy was set on the foo resource
+	SkipExperimental(t, ExperimentalBugStateCBD)
 	foo := state.RootModule().Resources["aws_instance.foo"].Instances[addrs.NoKey].Current
 	if !foo.CreateBeforeDestroy {
 		t.Fatalf("foo resource should have create_before_destroy set")
@@ -1231,6 +1234,8 @@ func TestContext2Apply_createBeforeDestroy_hook(t *testing.T) {
 
 // Test that we can perform an apply with CBD in a count with deposed instances.
 func TestContext2Apply_createBeforeDestroy_deposedCount(t *testing.T) {
+	SkipExperimental(t, ExperimentalFeatureTaint)
+
 	m := testModule(t, "apply-cbd-count")
 	p := testProvider("aws")
 	p.PlanResourceChangeFn = testDiffFn
@@ -1354,6 +1359,7 @@ func TestContext2Apply_createBeforeDestroy_deposedOnly(t *testing.T) {
 		t.Logf("%s", legacyDiffComparisonString(plan.Changes))
 	}
 
+	SkipExperimental(t, ExperimentalBugMissingProvider)
 	state, diags = ctx.Apply(context.Background(), plan, m, nil)
 	if diags.HasErrors() {
 		t.Fatalf("diags: %s", diags.Err())
@@ -2889,6 +2895,7 @@ func TestContext2Apply_moduleDestroyOrder(t *testing.T) {
 }
 
 func TestContext2Apply_moduleInheritAlias(t *testing.T) {
+	SkipExperimental(t, ExperimentalChangePreReqdProvider)
 	m := testModule(t, "apply-module-provider-inherit-alias")
 	p := testProvider("aws")
 	p.PlanResourceChangeFn = testDiffFn
@@ -2933,7 +2940,7 @@ module.child:
 }
 
 func TestContext2Apply_orphanResource(t *testing.T) {
-	SkipExperimental(t, ExperimentalBugStateProvider)
+	SkipExperimental(t, ExperimentalBugStateProvider, ExperimentalFeatureChecks)
 
 	// This is a two-step test:
 	// 1. Apply a configuration with resources that have count set.
@@ -4852,6 +4859,7 @@ func TestContext2Apply_errorDestroy_createBeforeDestroy(t *testing.T) {
 		t.Fatal("should have error")
 	}
 
+	SkipExperimental(t, ExperimentalBugTaintOnCreateFail)
 	actual := strings.TrimSpace(state.String())
 	expected := strings.TrimSpace(testTofuApplyErrorDestroyCreateBeforeDestroyStr)
 	if actual != expected {
@@ -4933,6 +4941,7 @@ func TestContext2Apply_multiDepose_createBeforeDestroy(t *testing.T) {
 		t.Fatal("should have error")
 	}
 
+	SkipExperimental(t, ExperimentalBugTaintOnCreateFail)
 	checkStateString(t, state, `
 aws_instance.web: (1 deposed)
   ID = bar
@@ -6054,7 +6063,7 @@ func TestContext2Apply_destroyOrder(t *testing.T) {
 
 // https://github.com/hashicorp/terraform/issues/2767
 func TestContext2Apply_destroyModulePrefix(t *testing.T) {
-	SkipExperimental(t, ExperimentalBugStateProvider)
+	SkipExperimental(t, ExperimentalBugStateProvider, ExperimentalFeatureHooks)
 
 	m := testModule(t, "apply-destroy-module-resource-prefix")
 	h := new(MockHook)
@@ -11525,6 +11534,7 @@ resource "aws_instance" "cbd" {
 		t.Fatal(diags.ErrWithWarnings())
 	}
 
+	SkipExperimental(t, ExperimentalBugStateCBD)
 	foo := state.ResourceInstance(mustResourceInstanceAddr("aws_instance.foo"))
 	if !foo.Current.CreateBeforeDestroy {
 		t.Fatal("aws_instance.foo should also be create_before_destroy")
@@ -11889,6 +11899,17 @@ locals {
 		t.Fatal(diags.ErrWithWarnings())
 	}
 	{
+		// This check is relying on the old runtime's behavior of inserting
+		// a "NoOp" change for every resource instance it considered during
+		// planning that didn't turn out to need any changes, because that
+		// NoOp change served as a way to record the planning result for
+		// downstream expression evaluation.
+		// Thew new runtime doesn't have that need because downstream evaluation
+		// is handled from the evaluator's internal tracking structures, and so
+		// it's actually expected for there to be no planned change for
+		// test_instance.a[0] here.
+		SkipExperimental(t, ExperimentalNewStrategyNeeded)
+
 		addr := mustResourceInstanceAddr("test_instance.a[0]")
 		change := plan.Changes.ResourceInstance(addr)
 		if change == nil {
@@ -12305,6 +12326,7 @@ resource "test_resource" "a" {
 	})
 	assertNoErrors(t, diags)
 
+	SkipExperimental(t, ExperimentalBugMissingProvider)
 	_, diags = ctx.Apply(context.Background(), plan, m, nil)
 	if diags.HasErrors() {
 		t.Fatalf("apply errors: %s", diags.Err())
@@ -13312,7 +13334,7 @@ func TestContext2Apply_dataSensitive(t *testing.T) {
 }
 
 func TestContext2Apply_errorRestorePrivateData(t *testing.T) {
-	SkipExperimental(t, ExperimentalBugStateProvider)
+	SkipExperimental(t, ExperimentalBugStateProvider, ExperimentalFlagUnknown)
 
 	// empty config to remove our resource
 	m := testModuleInline(t, map[string]string{
@@ -13354,7 +13376,7 @@ func TestContext2Apply_errorRestorePrivateData(t *testing.T) {
 }
 
 func TestContext2Apply_errorRestoreStatus(t *testing.T) {
-	SkipExperimental(t, ExperimentalBugStateProvider)
+	SkipExperimental(t, ExperimentalBugStateProvider, ExperimentalFlagUnknown)
 
 	// empty config to remove our resource
 	m := testModuleInline(t, map[string]string{
