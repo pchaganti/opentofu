@@ -14,7 +14,6 @@ import (
 	"github.com/zclconf/go-cty/cty"
 
 	"github.com/opentofu/opentofu/internal/addrs"
-	"github.com/opentofu/opentofu/internal/engine/internal/execgraph"
 	"github.com/opentofu/opentofu/internal/plans"
 )
 
@@ -36,24 +35,13 @@ func TestExecGraphBuilder_ManagedResourceInstanceSubgraph(t *testing.T) {
 	}.Instance(addrs.NoKey).Absolute(addrs.RootModuleInstance)
 
 	tests := map[string]struct {
-		// Build has an awkward signature because this test was written for
-		// an older prototype design of ManagedResourceInstanceSubgraph that
-		// didn't return as many results.
-		// TODO: Find a different way to structure this test so that we can
-		// confine this complexity only to the testing loop below and not
-		// to each individual test case.
 		Build func(
 			b *execGraphBuilder,
-		) (
-			execgraph.ResourceInstanceResultRef,
-			execgraph.ResourceInstanceResultRef,
-			func(execgraph.AnyResultRef),
-			func(execgraph.AnyResultRef),
-		)
+		) resourceInstanceObjectSubgraph
 		WantRepr string
 	}{
 		"create": {
-			func(b *execGraphBuilder) (execgraph.ResourceInstanceResultRef, execgraph.ResourceInstanceResultRef, func(execgraph.AnyResultRef), func(execgraph.AnyResultRef)) {
+			func(b *execGraphBuilder) resourceInstanceObjectSubgraph {
 				return b.ManagedResourceInstanceSubgraph(
 					&plans.ResourceInstanceChange{
 						Addr:        instAddr,
@@ -78,7 +66,7 @@ func TestExecGraphBuilder_ManagedResourceInstanceSubgraph(t *testing.T) {
 			`,
 		},
 		"update": {
-			func(b *execGraphBuilder) (execgraph.ResourceInstanceResultRef, execgraph.ResourceInstanceResultRef, func(execgraph.AnyResultRef), func(execgraph.AnyResultRef)) {
+			func(b *execGraphBuilder) resourceInstanceObjectSubgraph {
 				return b.ManagedResourceInstanceSubgraph(
 					&plans.ResourceInstanceChange{
 						Addr:        instAddr,
@@ -95,7 +83,7 @@ func TestExecGraphBuilder_ManagedResourceInstanceSubgraph(t *testing.T) {
 			`
 				v[0] = cty.StringVal("after");
 				
-				r[0] = ResourceInstancePrior(test.placeholder);
+				r[0] = ResourceInstancePrior(test.placeholder, await());
 				r[1] = ResourceInstanceDesired(test.placeholder, await());
 				r[2] = ManagedFinalPlan(r[1], r[0], v[0]);
 				r[3] = ManagedApply(r[2], nil, await());
@@ -104,7 +92,7 @@ func TestExecGraphBuilder_ManagedResourceInstanceSubgraph(t *testing.T) {
 			`,
 		},
 		"update with move": {
-			func(b *execGraphBuilder) (execgraph.ResourceInstanceResultRef, execgraph.ResourceInstanceResultRef, func(execgraph.AnyResultRef), func(execgraph.AnyResultRef)) {
+			func(b *execGraphBuilder) resourceInstanceObjectSubgraph {
 				oldInstAddr := addrs.Resource{
 					Mode: addrs.ManagedResourceMode,
 					Type: "test",
@@ -126,7 +114,7 @@ func TestExecGraphBuilder_ManagedResourceInstanceSubgraph(t *testing.T) {
 			`
 				v[0] = cty.StringVal("after");
 
-				r[0] = ResourceInstancePrior(test.old);
+				r[0] = ResourceInstancePrior(test.old, await());
 				r[1] = ManagedChangeAddr(r[0], test.placeholder);
 				r[2] = ResourceInstanceDesired(test.placeholder, await());
 				r[3] = ManagedFinalPlan(r[2], r[1], v[0]);
@@ -136,7 +124,7 @@ func TestExecGraphBuilder_ManagedResourceInstanceSubgraph(t *testing.T) {
 			`,
 		},
 		"delete": {
-			func(b *execGraphBuilder) (execgraph.ResourceInstanceResultRef, execgraph.ResourceInstanceResultRef, func(execgraph.AnyResultRef), func(execgraph.AnyResultRef)) {
+			func(b *execGraphBuilder) resourceInstanceObjectSubgraph {
 				return b.ManagedResourceInstanceSubgraph(
 					&plans.ResourceInstanceChange{
 						Addr:        instAddr,
@@ -153,15 +141,24 @@ func TestExecGraphBuilder_ManagedResourceInstanceSubgraph(t *testing.T) {
 			`
 				v[0] = cty.NullVal(cty.EmptyObject);
 				
-				r[0] = ResourceInstancePrior(test.placeholder);
+				r[0] = ResourceInstancePrior(test.placeholder, await());
 				r[1] = ManagedFinalPlan(nil, r[0], v[0]);
 				r[2] = ManagedApply(r[1], nil, await());
 
-				test.placeholder = nil;
+				test.placeholder = r[0];
 			`,
+			// NOTE: The result for an object being deleted is set to the
+			// prior state, which is counter-intuitive but correct because:
+			// - In normal planning mode there can't be configuration references
+			//   to something that is being deleted anyway, and so it doesn't
+			//   really matter which value is treated as the result.
+			// - In destroy planning mode ephemeral objects like provider
+			//   instances are expected to be able to rely on the prior state
+			//   of resource instances that are being planned for deletion,
+			//   and so this wiring creates that effect during the apply phase.
 		},
 		"delete then create": {
-			func(b *execGraphBuilder) (execgraph.ResourceInstanceResultRef, execgraph.ResourceInstanceResultRef, func(execgraph.AnyResultRef), func(execgraph.AnyResultRef)) {
+			func(b *execGraphBuilder) resourceInstanceObjectSubgraph {
 				return b.ManagedResourceInstanceSubgraph(
 					&plans.ResourceInstanceChange{
 						Addr:        instAddr,
@@ -179,7 +176,7 @@ func TestExecGraphBuilder_ManagedResourceInstanceSubgraph(t *testing.T) {
 				v[0] = cty.StringVal("after");
 				v[1] = cty.NullVal(cty.String);
 				
-				r[0] = ResourceInstancePrior(test.placeholder);
+				r[0] = ResourceInstancePrior(test.placeholder, await());
 				r[1] = ResourceInstanceDesired(test.placeholder, await());
 				r[2] = ManagedFinalPlan(r[1], nil, v[0]);
 				r[3] = ManagedFinalPlan(nil, r[0], v[1]);
@@ -190,7 +187,7 @@ func TestExecGraphBuilder_ManagedResourceInstanceSubgraph(t *testing.T) {
 			`,
 		},
 		"delete then create with move": {
-			func(b *execGraphBuilder) (execgraph.ResourceInstanceResultRef, execgraph.ResourceInstanceResultRef, func(execgraph.AnyResultRef), func(execgraph.AnyResultRef)) {
+			func(b *execGraphBuilder) resourceInstanceObjectSubgraph {
 				oldInstAddr := addrs.Resource{
 					Mode: addrs.ManagedResourceMode,
 					Type: "test",
@@ -213,7 +210,7 @@ func TestExecGraphBuilder_ManagedResourceInstanceSubgraph(t *testing.T) {
 				v[0] = cty.StringVal("after");
 				v[1] = cty.NullVal(cty.String);
 
-				r[0] = ResourceInstancePrior(test.old);
+				r[0] = ResourceInstancePrior(test.old, await());
 				r[1] = ManagedChangeAddr(r[0], test.placeholder);
 				r[2] = ResourceInstanceDesired(test.placeholder, await());
 				r[3] = ManagedFinalPlan(r[2], nil, v[0]);
@@ -225,7 +222,7 @@ func TestExecGraphBuilder_ManagedResourceInstanceSubgraph(t *testing.T) {
 			`,
 		},
 		"create then delete": {
-			func(b *execGraphBuilder) (execgraph.ResourceInstanceResultRef, execgraph.ResourceInstanceResultRef, func(execgraph.AnyResultRef), func(execgraph.AnyResultRef)) {
+			func(b *execGraphBuilder) resourceInstanceObjectSubgraph {
 				return b.ManagedResourceInstanceSubgraph(
 					&plans.ResourceInstanceChange{
 						Addr:        instAddr,
@@ -243,7 +240,7 @@ func TestExecGraphBuilder_ManagedResourceInstanceSubgraph(t *testing.T) {
 				v[0] = cty.StringVal("after");
 				v[1] = cty.NullVal(cty.String);
 
-				r[0] = ResourceInstancePrior(test.placeholder);
+				r[0] = ResourceInstancePrior(test.placeholder, await());
 				r[1] = ResourceInstanceDesired(test.placeholder, await());
 				r[2] = ManagedFinalPlan(r[1], nil, v[0]);
 				r[3] = ManagedFinalPlan(nil, r[0], v[1]);
@@ -256,7 +253,7 @@ func TestExecGraphBuilder_ManagedResourceInstanceSubgraph(t *testing.T) {
 			`,
 		},
 		"create then delete with move": {
-			func(b *execGraphBuilder) (execgraph.ResourceInstanceResultRef, execgraph.ResourceInstanceResultRef, func(execgraph.AnyResultRef), func(execgraph.AnyResultRef)) {
+			func(b *execGraphBuilder) resourceInstanceObjectSubgraph {
 				oldInstAddr := addrs.Resource{
 					Mode: addrs.ManagedResourceMode,
 					Type: "test",
@@ -279,7 +276,7 @@ func TestExecGraphBuilder_ManagedResourceInstanceSubgraph(t *testing.T) {
 				v[0] = cty.StringVal("after");
 				v[1] = cty.NullVal(cty.String);
 
-				r[0] = ResourceInstancePrior(test.old);
+				r[0] = ResourceInstancePrior(test.old, await());
 				r[1] = ManagedChangeAddr(r[0], test.placeholder);
 				r[2] = ResourceInstanceDesired(test.placeholder, await());
 				r[3] = ManagedFinalPlan(r[2], nil, v[0]);
@@ -309,7 +306,8 @@ func TestExecGraphBuilder_ManagedResourceInstanceSubgraph(t *testing.T) {
 			// of this function which only had one result. We should find a
 			// nice way to restructure this test so that it can check whether
 			// _all_ of the return values are correct.
-			resultRef, _, _, _ := test.Build(builder)
+			subgraph := test.Build(builder)
+			resultRef := subgraph.valueRef
 			builder.lower.SetResourceInstanceFinalStateResult(instAddr, resultRef)
 
 			graph := builder.Finish()
