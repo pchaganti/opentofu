@@ -1732,7 +1732,14 @@ func TestContext2Apply_dataBasic(t *testing.T) {
 }
 
 func TestContext2Apply_destroyData(t *testing.T) {
-	SkipExperimental(t, ExperimentalFeatureDestroy)
+	// The concept of "destroying" a data resource instance is a nonsense that
+	// the original runtime invented to compensate for some
+	// managed-resource-specific lifecycle assumptions, but the new runtime
+	// has no need for this since its planning engine should just quietly drop
+	// any no-longer-needed data resource instances at the same time it would've
+	// tried to read a data resource instance that's still desired, without any
+	// special handling in the apply phase at all.
+	SkipExperimental(t, ExperimentalObsoleteDestroyData)
 
 	m := testModule(t, "apply-destroy-data-resource")
 	p := testProvider("null")
@@ -7004,8 +7011,6 @@ func TestContext2Apply_errorPartial(t *testing.T) {
 }
 
 func TestContext2Apply_hook(t *testing.T) {
-	SkipExperimental(t, ExperimentalFeatureHooks)
-
 	m := testModule(t, "apply-good")
 	h := new(MockHook)
 	p := testProvider("aws")
@@ -7030,14 +7035,13 @@ func TestContext2Apply_hook(t *testing.T) {
 	if !h.PostApplyCalled {
 		t.Fatal("should be called")
 	}
+	SkipExperimental(t, ExperimentalBugStateUpdateHook)
 	if !h.PostStateUpdateCalled {
 		t.Fatalf("should call post state update")
 	}
 }
 
 func TestContext2Apply_hookOrphan(t *testing.T) {
-	SkipExperimental(t, ExperimentalFeatureHooks)
-
 	m := testModule(t, "apply-blank")
 	h := new(MockHook)
 	p := testProvider("aws")
@@ -7075,6 +7079,7 @@ func TestContext2Apply_hookOrphan(t *testing.T) {
 	if !h.PostApplyCalled {
 		t.Fatal("should be called")
 	}
+	SkipExperimental(t, ExperimentalBugStateUpdateHook)
 	if !h.PostStateUpdateCalled {
 		t.Fatalf("should call post state update")
 	}
@@ -8409,6 +8414,13 @@ func TestContext2Apply_createBefore_depends(t *testing.T) {
 	want := strings.TrimSpace(testTofuApplyDependsCreateBeforeStr)
 	if got != want {
 		t.Fatalf("wrong final state\ngot:\n%s\n\nwant:\n%s", got, want)
+	}
+
+	if got, want := len(h.Diffs), 3; got < want {
+		t.Fatalf("wrong number of tracked diffs %d; need at least %d", got, want)
+	}
+	if got, want := len(h.States), 3; got < want {
+		t.Fatalf("wrong number of tracked states %d; need at least %d", got, want)
 	}
 
 	// Test that things were managed _in the right order_

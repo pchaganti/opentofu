@@ -63,6 +63,29 @@ func (ops *execOperations) ManagedFinalPlan(
 	objAddr := instAddr.Object(deposedKey)
 	log.Printf("[TRACE] apply phase: ManagedFinalPlan %s using %s", objAddr, providerConfigAddr)
 
+	tracer := contextTracer(ctx)
+	if cb := tracer.StartManagedResourceInstanceObjectFinalPlan; cb != nil {
+		priorVal := cty.NullVal(cty.DynamicPseudoType)
+		if prior != nil && prior.State != nil {
+			priorVal = prior.State.Value
+		}
+		configVal := cty.NullVal(cty.DynamicPseudoType)
+		if desired != nil {
+			configVal = desired.ConfigVal
+		}
+		ctx = cb(ctx, objAddr, priorVal, configVal, initialPlannedVal)
+	}
+	plannedVal := cty.DynamicVal // reassigned once we have a final value to return
+	if cb := tracer.EndManagedResourceInstanceObjectFinalPlan; cb != nil {
+		priorVal := cty.NullVal(cty.DynamicPseudoType)
+		if prior != nil && prior.State != nil {
+			priorVal = prior.State.Value
+		}
+		defer func() { // Extra closure to delay evaluating plannedVal and diags until we actually return
+			cb(ctx, objAddr, priorVal, plannedVal, diags)
+		}()
+	}
+
 	providerClient, moreDiags := ops.configOracle.ProviderInstance(ctx, providerConfigAddr)
 	diags = diags.Append(moreDiags)
 	if diags.HasErrors() {
@@ -110,6 +133,7 @@ func (ops *execOperations) ManagedFinalPlan(
 		return nil, diags
 	}
 
+	plannedVal = resp.Planned.Value // for our deferred call to tracer.EndManagedResourceInstanceObjectFinalPlan
 	return &exec.ManagedResourceObjectFinalPlan{
 		Addr:                      instAddr.Object(deposedKey),
 		ResourceType:              resourceTypeName,
@@ -179,6 +203,17 @@ func (ops *execOperations) ManagedApply(
 	// through as normal, linear code without any special control flow, but
 	// that comes at the expense of this function doing considerably more
 	// work than most other operation methods do.
+
+	tracer := contextTracer(ctx)
+	if cb := tracer.StartManagedResourceInstanceObjectApply; cb != nil {
+		ctx = cb(ctx, plan.Addr, plan.PriorStateVal, plan.PlannedVal)
+	}
+	resultVal := cty.DynamicVal // reassigned once we have a final value to return
+	if cb := tracer.EndManagedResourceInstanceObjectApply; cb != nil {
+		defer func() { // Extra closure to delay evaluating resultVal and diags until we actually return
+			cb(ctx, plan.Addr, resultVal, diags)
+		}()
+	}
 
 	providerAddr := providerConfigAddr.Config.Config.Provider
 	schema, moreDiags := ops.plugins.ResourceTypeSchema(
@@ -320,6 +355,11 @@ func (ops *execOperations) ManagedApply(
 		ops.workingState.RemoveResourceInstanceObjectFull(objAddr, providerConfigAddr)
 	}
 
+	if state != nil {
+		resultVal = state.Value // for our deferred call to tracer.EndManagedResourceInstanceObjectApply
+	} else {
+		resultVal = cty.NullVal(schema.Block.ImpliedType())
+	}
 	ret := &exec.ResourceInstanceObject{
 		Addr:  plan.Addr,
 		State: state, // nil if the object was deleted

@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/apparentlymart/go-versions/versions"
+	"github.com/zclconf/go-cty/cty"
+
 	"github.com/opentofu/opentofu/internal/addrs"
 	"github.com/opentofu/opentofu/internal/configs"
 	"github.com/opentofu/opentofu/internal/engine/applying"
@@ -23,9 +25,9 @@ import (
 	"github.com/opentofu/opentofu/internal/lang/eval"
 	"github.com/opentofu/opentofu/internal/lang/exprs"
 	"github.com/opentofu/opentofu/internal/plans"
+	"github.com/opentofu/opentofu/internal/shared"
 	"github.com/opentofu/opentofu/internal/states"
 	"github.com/opentofu/opentofu/internal/tfdiags"
-	"github.com/zclconf/go-cty/cty"
 )
 
 /////////////////////////
@@ -179,6 +181,9 @@ func (c *Context) newEnginePlan(ctx context.Context, config *configs.Config, pre
 
 	timestamp := time.Now().UTC()
 
+	tracer := c.newEnginePlanTracer()
+	ctx = planning.ContextWithTracer(ctx, tracer)
+
 	configInst, plugins, done, moreDiags := c.newEngineShim(ctx, config, opts.SetVariables, timestamp, false)
 	diags = diags.Append(moreDiags)
 
@@ -204,6 +209,76 @@ func (c *Context) newEnginePlan(ctx context.Context, config *configs.Config, pre
 	return plan, diags
 }
 
+func (c *Context) newEnginePlanTracer() *planning.Tracer {
+	// TODO: For now this just shims to our old Hook API as best we can. Once we
+	// start using the new runtime directly instead of shimming it through
+	// the old runtime's API we should let the CLI layer be responsible for
+	// providing its own planning.PlanTracer directly, which it can then
+	// use both to drive its own UI and to centralize our OpenTelemetry tracing
+	// logic instead of having it spread all over the codebase.
+
+	return &planning.Tracer{
+		StartManagedResourceInstanceObjectRefresh: func(ctx context.Context, addr addrs.AbsResourceInstanceObject, prevRoundVal cty.Value) context.Context {
+			inst := addr.InstanceAddr
+			gen := addr.DeposedKey.Generation()
+			c.eachHook(func(h Hook) (HookAction, error) {
+				return h.PreRefresh(inst, gen, prevRoundVal)
+			})
+			return ctx
+		},
+		EndManagedResourceInstanceObjectRefresh: func(ctx context.Context, addr addrs.AbsResourceInstanceObject, prevRoundVal, refreshedVal cty.Value, diags tfdiags.Diagnostics) {
+			inst := addr.InstanceAddr
+			gen := addr.DeposedKey.Generation()
+			c.eachHook(func(h Hook) (HookAction, error) {
+				return h.PostRefresh(inst, gen, prevRoundVal, refreshedVal)
+			})
+		},
+		StartManagedResourceInstanceObjectPlanChanges: func(ctx context.Context, addr addrs.AbsResourceInstanceObject, priorVal, configVal cty.Value) context.Context {
+			inst := addr.InstanceAddr
+			gen := addr.DeposedKey.Generation()
+			c.eachHook(func(h Hook) (HookAction, error) {
+				// TODO: We're sending the configVal in the slot where the
+				// Hook API expects the "proposed new value", and that isn't
+				// quite right. Does that matter for the current real-world
+				// use of the hook API?
+				// The new runtime intentionally buries the "proposed new value"
+				// in the implementation details of the provider call since
+				// it's a quirky part of the protocol that we preserve only
+				// for compatibility.
+				return h.PreDiff(inst, gen, priorVal, configVal)
+			})
+			return ctx
+		},
+		EndManagedResourceInstanceObjectPlanChanges: func(ctx context.Context, addr addrs.AbsResourceInstanceObject, action plans.Action, priorVal, plannedVal cty.Value, diags tfdiags.Diagnostics) {
+			inst := addr.InstanceAddr
+			gen := addr.DeposedKey.Generation()
+			c.eachHook(func(h Hook) (HookAction, error) {
+				return h.PostDiff(inst, gen, action, priorVal, plannedVal)
+			})
+		},
+		StartDataResourceInstanceRead: func(ctx context.Context, addr addrs.AbsResourceInstance) context.Context {
+			c.eachHook(func(h Hook) (HookAction, error) {
+				// The prior value for a data resource instance is always null
+				// because conceptually it is always read anew for each round.
+				// (It's retained in the state as a convenience for unusual
+				// situations like "tofu console", but the prior state value
+				// cannot be used in the main codepath because the protocol
+				// includes no way to "upgrade" when the provider schema changes.)
+				return h.PreRefresh(addr, addrs.CurrentResourceInstanceObjectGeneration, cty.NullVal(cty.DynamicPseudoType))
+			})
+			return ctx
+		},
+		EndDataResourceInstanceRead: func(ctx context.Context, addr addrs.AbsResourceInstance, resultVal cty.Value, diags tfdiags.Diagnostics) {
+			c.eachHook(func(h Hook) (HookAction, error) {
+				return h.PostRefresh(addr, addrs.CurrentResourceInstanceObjectGeneration, cty.NullVal(cty.DynamicPseudoType), resultVal)
+			})
+		},
+
+		// We'll also include the [shared.Tracer] we use for both plan and apply.
+		Tracer: c.newEngineSharedTracer(),
+	}
+}
+
 func (c *Context) newEngineApply(ctx context.Context, config *configs.Config, plan *plans.Plan, variables InputValues) (*states.State, tfdiags.Diagnostics) {
 	var diags tfdiags.Diagnostics
 
@@ -218,6 +293,9 @@ func (c *Context) newEngineApply(ctx context.Context, config *configs.Config, pl
 		return nil, diags
 	}
 
+	tracer := c.newEngineApplyTracer()
+	ctx = applying.ContextWithTracer(ctx, tracer)
+
 	configInst, plugins, done, moreDiags := c.newEngineShim(ctx, config, variables, plan.Timestamp, true)
 	diags = diags.Append(moreDiags)
 
@@ -230,6 +308,172 @@ func (c *Context) newEngineApply(ctx context.Context, config *configs.Config, pl
 	newState, moreDiags := applying.ApplyPlannedChanges(ctx, plan, configInst, plugins)
 	diags = diags.Append(moreDiags)
 	return newState, diags
+}
+
+func (c *Context) newEngineApplyTracer() *applying.Tracer {
+	// TODO: For now this just shims to our old Hook API as best we can. Once we
+	// start using the new runtime directly instead of shimming it through
+	// the old runtime's API we should let the CLI layer be responsible for
+	// providing its own planning.PlanTracer directly, which it can then
+	// use both to drive its own UI and to centralize our OpenTelemetry tracing
+	// logic instead of having it spread all over the codebase.
+
+	// TODO: shimPlanAction is a very rough approximation of deciding a
+	// [plans.Action] based on the prior and planned value, dealing with the
+	// fact that in the new runtime the "planned action" is primarily a UI
+	// thing used by the planning engine to describe to the user what it is
+	// proposing to change. The applying engine has no need for this because
+	// "planned action" is not represented anywhere in the provider protocol.
+	// This is a temporary shim until we decide whose job it should be to decide
+	// the planned action under the new runtime... hopefully it becomes purely
+	// a UI concern that even the planning engine doesn't need to care about,
+	// but that remains to be seen once we design new plan models matching how
+	// the new runtime prefers to think about changes.
+	shimPlanAction := func(priorVal, plannedVal cty.Value) plans.Action {
+		// Note that we don't need to handle the "replace" actions here because
+		// by the time we're in the apply phase they've already been decomposed
+		// into their separate Create and Destroy legs.
+		if priorVal.IsNull() {
+			return plans.Create
+		}
+		if plannedVal.IsNull() {
+			return plans.Delete
+		}
+		return plans.Update
+	}
+
+	return &applying.Tracer{
+		StartManagedResourceInstanceObjectFinalPlan: func(ctx context.Context, addr addrs.AbsResourceInstanceObject, priorVal, configVal, expectedVal cty.Value) context.Context {
+			inst := addr.InstanceAddr
+			gen := addr.DeposedKey.Generation()
+			c.eachHook(func(h Hook) (HookAction, error) {
+				// TODO: We're sending the expectedVal in the slot where the
+				// Hook API expects the "proposed new value", and that isn't
+				// quite right. Does that matter for the current real-world
+				// use of the hook API?
+				// The new runtime intentionally buries the "proposed new value"
+				// in the implementation details of the provider call since
+				// it's a quirky part of the protocol that we preserve only
+				// for compatibility.
+				return h.PreDiff(inst, gen, priorVal, expectedVal)
+			})
+			return ctx
+		},
+		EndManagedResourceInstanceObjectFinalPlan: func(ctx context.Context, addr addrs.AbsResourceInstanceObject, priorVal, plannedVal cty.Value, diags tfdiags.Diagnostics) {
+			inst := addr.InstanceAddr
+			gen := addr.DeposedKey.Generation()
+			c.eachHook(func(h Hook) (HookAction, error) {
+				return h.PostDiff(inst, gen, shimPlanAction(priorVal, plannedVal), priorVal, plannedVal)
+			})
+		},
+		StartManagedResourceInstanceObjectApply: func(ctx context.Context, addr addrs.AbsResourceInstanceObject, priorVal, plannedVal cty.Value) context.Context {
+			inst := addr.InstanceAddr
+			gen := addr.DeposedKey.Generation()
+			c.eachHook(func(h Hook) (HookAction, error) {
+				return h.PreApply(inst, gen, shimPlanAction(priorVal, plannedVal), priorVal, plannedVal)
+			})
+			return ctx
+		},
+		EndManagedResourceInstanceObjectApply: func(ctx context.Context, addr addrs.AbsResourceInstanceObject, resultVal cty.Value, diags tfdiags.Diagnostics) {
+			inst := addr.InstanceAddr
+			gen := addr.DeposedKey.Generation()
+			c.eachHook(func(h Hook) (HookAction, error) {
+				return h.PostApply(inst, gen, resultVal, diags.Err())
+			})
+			// TODO: the CLI layer and some of our tests also expect to get a
+			// PostStateUpdate call each time the state might have changed,
+			// but supporting that here would require us to either expose the
+			// apply engine's internal working state or to copy it each time
+			// we apply something, and we're trying to move away from there
+			// being a single big state object that everything is interacting
+			// with so we'll need to think about what compromise is best to
+			// make here.
+		},
+		StartDataResourceInstanceRead: func(ctx context.Context, addr addrs.AbsResourceInstance) context.Context {
+			c.eachHook(func(h Hook) (HookAction, error) {
+				// The prior value for a data resource instance is always null
+				// because conceptually it is always read anew for each round.
+				// (It's retained in the state as a convenience for unusual
+				// situations like "tofu console", but the prior state value
+				// cannot be used in the main codepath because the protocol
+				// includes no way to "upgrade" when the provider schema changes.)
+				return h.PreRefresh(addr, addrs.CurrentResourceInstanceObjectGeneration, cty.NullVal(cty.DynamicPseudoType))
+			})
+			return ctx
+		},
+		EndDataResourceInstanceRead: func(ctx context.Context, addr addrs.AbsResourceInstance, resultVal cty.Value, diags tfdiags.Diagnostics) {
+			c.eachHook(func(h Hook) (HookAction, error) {
+				return h.PostRefresh(addr, addrs.CurrentResourceInstanceObjectGeneration, cty.NullVal(cty.DynamicPseudoType), resultVal)
+			})
+		},
+
+		// We'll also include the [shared.Tracer] we use for both plan and apply.
+		Tracer: c.newEngineSharedTracer(),
+	}
+}
+
+func (c *Context) newEngineSharedTracer() shared.Tracer {
+	// TODO: For now this just shims to our old Hook API as best we can. Once we
+	// start using the new runtime directly instead of shimming it through
+	// the old runtime's API we should let the CLI layer be responsible for
+	// providing its own planning.PlanTracer directly, which it can then
+	// use both to drive its own UI and to centralize our OpenTelemetry tracing
+	// logic instead of having it spread all over the codebase.
+
+	return shared.Tracer{
+		StartEphemeralResourceInstanceOpen: func(ctx context.Context, addr addrs.AbsResourceInstance) context.Context {
+			c.eachHook(func(h Hook) (HookAction, error) {
+				return h.PreOpen(addr)
+			})
+			return ctx
+		},
+		EndEphemeralResourceInstanceOpen: func(ctx context.Context, addr addrs.AbsResourceInstance, diags tfdiags.Diagnostics) {
+			c.eachHook(func(h Hook) (HookAction, error) {
+				return h.PostOpen(addr, diags.Err())
+			})
+		},
+		StartEphemeralResourceInstanceRenew: func(ctx context.Context, addr addrs.AbsResourceInstance) context.Context {
+			c.eachHook(func(h Hook) (HookAction, error) {
+				return h.PreRenew(addr)
+			})
+			return ctx
+		},
+		EndEphemeralResourceInstanceRenew: func(ctx context.Context, addr addrs.AbsResourceInstance, diags tfdiags.Diagnostics) {
+			c.eachHook(func(h Hook) (HookAction, error) {
+				return h.PostRenew(addr, diags.Err())
+			})
+		},
+		StartEphemeralResourceInstanceClose: func(ctx context.Context, addr addrs.AbsResourceInstance) context.Context {
+			c.eachHook(func(h Hook) (HookAction, error) {
+				return h.PreClose(addr)
+			})
+			return ctx
+		},
+		EndEphemeralResourceInstanceClose: func(ctx context.Context, addr addrs.AbsResourceInstance, diags tfdiags.Diagnostics) {
+			c.eachHook(func(h Hook) (HookAction, error) {
+				return h.PostClose(addr, diags.Err())
+			})
+		},
+	}
+}
+
+func (c *Context) eachHook(fn func(Hook) (HookAction, error)) {
+	for _, h := range c.hooks {
+		action, err := fn(h)
+		if err != nil {
+			// The new runtime intentionally doesn't allow tracers to
+			// force failure: this API is purely for passive tracing and
+			// UI reporting. Therefore we'll just log the error and return.
+			log.Printf("[ERROR] %T: %s", h, err)
+			return
+		}
+		switch action {
+		case HookActionContinue:
+			continue
+		case HookActionHalt:
+			return
+		}
+	}
 }
 
 type newRuntimeModulesForTesting struct {
