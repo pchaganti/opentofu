@@ -21,6 +21,7 @@ import (
 	"github.com/hashicorp/go-retryablehttp"
 	"github.com/opentofu/opentofu/internal/command/flags"
 	"github.com/opentofu/opentofu/internal/command/system"
+	"github.com/opentofu/opentofu/internal/oci"
 	"github.com/opentofu/svchost/disco"
 
 	"github.com/opentofu/opentofu/internal/addrs"
@@ -195,6 +196,7 @@ type Meta struct {
 	// In any other cases, this configuration is built and used directly in `realMain`
 	// when the providers sources are built.
 	ProviderSourceLocationConfig getproviders.LocationConfig
+	OCICredentialsPolicyBuilder  oci.OCICredsPolicyBuilder
 }
 
 type testingOverrides struct {
@@ -396,6 +398,22 @@ func (m *Meta) contextOpts(ctx context.Context) (*tofu.ContextOpts, error) {
 			providerFactories,
 			m.provisionerFactories(),
 		)
+	}
+
+	if m.NewRuntimeEnabled() {
+		// Inject runtime modules if the new runtime is enabled.
+		// This allows the shims in the tofu module to function
+		// without having to understand module installation logic.
+
+		loader, _ := m.initConfigLoader()
+
+		// This gets the current directory as full path.
+		path := m.WorkingDir.NormalizePath(m.WorkingDir.RootModuleDir())
+		root, _ := loader.Parser().LoadConfigDirUneval(path, configs.SelectiveLoadAll)
+		opts.Modules = &newRuntimeModules{
+			loader: loader,
+			root:   root,
+		}
 	}
 
 	opts.Meta = &tofu.ContextMeta{

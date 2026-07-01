@@ -6,8 +6,11 @@
 package arguments
 
 import (
+	"fmt"
+
 	"github.com/opentofu/opentofu/internal/command/flags"
 	"github.com/opentofu/opentofu/internal/tfdiags"
+	"github.com/opentofu/svchost/uritemplates"
 )
 
 // ProvidersLock represents the command-line arguments for the 'providers lock' command.
@@ -24,6 +27,9 @@ type ProvidersLock struct {
 	// NetMirrorURL represents a URL to a mirrored registry from where OpenTofu should check for
 	// providers instead to reach out for the registry.
 	NetMirrorURL string
+	// OciMirrorTemplate represents a URI-style template string that evaluates to an OCI repository address
+	// to use for the providers.
+	OciMirrorTemplate string
 
 	// ViewOptions specifies which view options to use
 	ViewOptions ViewOptions
@@ -44,6 +50,7 @@ func ParseProvidersLock(args []string) (*ProvidersLock, func(), tfdiags.Diagnost
 	cmdFlags.Var(&arguments.OptPlatforms, "platform", "target platform")
 	cmdFlags.StringVar(&arguments.FsMirrorDir, "fs-mirror", "", "filesystem mirror directory")
 	cmdFlags.StringVar(&arguments.NetMirrorURL, "net-mirror", "", "network mirror base URL")
+	cmdFlags.StringVar(&arguments.OciMirrorTemplate, "oci-mirror", "", "oci mirror URI template")
 	arguments.ViewOptions.AddFlags(cmdFlags, false)
 	if err := cmdFlags.Parse(args); err != nil {
 		diags = diags.Append(tfdiags.Sourceless(
@@ -52,11 +59,27 @@ func ParseProvidersLock(args []string) (*ProvidersLock, func(), tfdiags.Diagnost
 			err.Error(),
 		))
 	}
-	if arguments.FsMirrorDir != "" && arguments.NetMirrorURL != "" {
+	mirrorSet := false
+	for _, mirror := range []string{arguments.FsMirrorDir, arguments.NetMirrorURL, arguments.OciMirrorTemplate} {
+		if mirror == "" {
+			continue
+		}
+		if mirrorSet {
+			diags = diags.Append(tfdiags.Sourceless(
+				tfdiags.Error,
+				"Invalid installation method options",
+				"The mirror command line options are mutually-exclusive.",
+			))
+			break
+		}
+		mirrorSet = true
+	}
+
+	if err := uritemplates.ValidateLevel1(arguments.OciMirrorTemplate); err != nil {
 		diags = diags.Append(tfdiags.Sourceless(
 			tfdiags.Error,
-			"Invalid installation method options",
-			"The -fs-mirror and -net-mirror command line options are mutually-exclusive.",
+			"Invalid OCI mirror URI template",
+			fmt.Sprintf("The -oci-mirror argument is not a valid URI template: %s.", tfdiags.FormatError(err)),
 		))
 	}
 

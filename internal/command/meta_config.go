@@ -294,6 +294,12 @@ func (m *Meta) installModules(ctx context.Context, rootDir, testsDir string, upg
 	}
 
 	inst := initwd.NewModuleInstaller(m.WorkingDir.ModulesDir(), loader, m.registryClient(ctx), m.ModulePackageFetcher)
+	if m.NewRuntimeEnabled() {
+		// Tell the module installer it should use
+		// the configuration for the new runtime instead
+		// of the legacy paths
+		inst.ConfigInstance = m.StaticConfigInstance
+	}
 
 	call, vDiags := m.rootModuleCall(ctx, rootDir)
 	diags = diags.Append(vDiags)
