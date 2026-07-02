@@ -6,6 +6,7 @@ package evalchecks
 
 import (
 	"fmt"
+	"math"
 	"runtime"
 
 	"github.com/hashicorp/hcl/v2"
@@ -17,6 +18,8 @@ import (
 )
 
 type EvaluateFunc func(expr hcl.Expression) (cty.Value, tfdiags.Diagnostics)
+
+const maxCount = int64(math.MaxInt32)
 
 // EvaluateCountExpression is our standard mechanism for interpreting an
 // expression given for a "count" argument on a resource or a module. This
@@ -108,6 +111,16 @@ func EvaluateCountExpressionValue(expr hcl.Expression, ctx EvaluateFunc) (cty.Va
 
 	case !countVal.IsKnown():
 		return cty.UnknownVal(cty.Number), diags
+	}
+
+	if countVal.Type() == cty.Number && countVal.GreaterThan(cty.NumberIntVal(maxCount)).True() {
+		diags = diags.Append(&hcl.Diagnostic{
+			Severity: hcl.DiagError,
+			Summary:  "Invalid count argument",
+			Detail:   fmt.Sprintf(`The given "count" argument value is unsuitable: must be less than or equal to %d.`, maxCount),
+			Subject:  expr.Range().Ptr(),
+		})
+		return nullCount, diags
 	}
 
 	var count int
