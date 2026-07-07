@@ -15,7 +15,8 @@ import (
 )
 
 type keyMeta struct {
-	CiphertextBlob []byte `json:"ciphertext_blob"`
+	CiphertextBlob    []byte            `json:"ciphertext_blob"`
+	EncryptionContext map[string]string `json:"encryption_context,omitempty"`
 }
 
 func (m keyMeta) isPresent() bool {
@@ -49,8 +50,9 @@ func (p keyProvider) Provide(rawMeta keyprovider.KeyMeta) (keyprovider.Output, k
 	spec := types.DataKeySpec(p.KeySpec)
 
 	generatedKeyData, err := p.svc.GenerateDataKey(p.ctx, &kms.GenerateDataKeyInput{
-		KeyId:   aws.String(p.KMSKeyID),
-		KeySpec: spec,
+		KeyId:             aws.String(p.KMSKeyID),
+		KeySpec:           spec,
+		EncryptionContext: p.EncryptionContext,
 	})
 
 	if err != nil {
@@ -63,6 +65,7 @@ func (p keyProvider) Provide(rawMeta keyprovider.KeyMeta) (keyprovider.Output, k
 	// Set initial outputs that are always set
 	out.EncryptionKey = generatedKeyData.Plaintext
 	outMeta.CiphertextBlob = generatedKeyData.CiphertextBlob
+	outMeta.EncryptionContext = p.EncryptionContext
 
 	// We do not set the DecryptionKey here as we should only be setting the decryption key if we are decrypting
 	// and that is handled below when we check if the inMeta has a CiphertextBlob
@@ -70,8 +73,9 @@ func (p keyProvider) Provide(rawMeta keyprovider.KeyMeta) (keyprovider.Output, k
 	if inMeta.isPresent() {
 		// We have an existing decryption key to decrypt, so we should now populate the DecryptionKey
 		decryptedKeyData, decryptErr := p.svc.Decrypt(p.ctx, &kms.DecryptInput{
-			KeyId:          aws.String(p.KMSKeyID),
-			CiphertextBlob: inMeta.CiphertextBlob,
+			KeyId:             aws.String(p.KMSKeyID),
+			CiphertextBlob:    inMeta.CiphertextBlob,
+			EncryptionContext: inMeta.EncryptionContext,
 		})
 
 		if decryptErr != nil {

@@ -8,6 +8,7 @@ package aws_kms
 import (
 	"context"
 	"crypto/rand"
+	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/kms"
@@ -25,31 +26,50 @@ func (m *mockKMS) Decrypt(ctx context.Context, params *kms.DecryptInput, optFns 
 	return m.decrypt(params)
 }
 
-func injectMock(m *mockKMS) {
+func injectMock(t testing.TB, m *mockKMS) {
+	original := newKMSFromConfig
+	t.Cleanup(func() {
+		newKMSFromConfig = original
+	})
+
 	newKMSFromConfig = func(cfg aws.Config) kmsClient {
 		return m
 	}
 }
 
-func injectDefaultMock() {
-	injectMock(&mockKMS{
+type capturedKMSCalls struct {
+	GenKeyContext  *map[string]string
+	DecryptContext *map[string]string
+}
+
+func injectDefaultMock(t testing.TB) {
+	injectCapturingMock(t, "alias/my-mock-key")
+}
+
+func injectCapturingMock(t testing.TB, keyId string) capturedKMSCalls {
+	var genCtx, decCtx map[string]string
+	injectMock(t, &mockKMS{
 		genkey: func(params *kms.GenerateDataKeyInput) (*kms.GenerateDataKeyOutput, error) {
+			genCtx = params.EncryptionContext
 			keyData := make([]byte, 32)
 			_, err := rand.Read(keyData)
 			if err != nil {
 				panic(err)
 			}
-
 			return &kms.GenerateDataKeyOutput{
-				CiphertextBlob: append([]byte(*params.KeyId), keyData...),
+				CiphertextBlob: append([]byte(keyId), keyData...),
 				Plaintext:      keyData,
 			}, nil
-
 		},
 		decrypt: func(params *kms.DecryptInput) (*kms.DecryptOutput, error) {
+			decCtx = params.EncryptionContext
 			return &kms.DecryptOutput{
-				Plaintext: params.CiphertextBlob[:len(*params.KeyId)],
+				Plaintext: params.CiphertextBlob[len(keyId):],
 			}, nil
 		},
 	})
+	return capturedKMSCalls{
+		GenKeyContext:  &genCtx,
+		DecryptContext: &decCtx,
+	}
 }

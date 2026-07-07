@@ -6,6 +6,7 @@
 package aws_kms
 
 import (
+	"bytes"
 	"fmt"
 	"testing"
 
@@ -14,15 +15,18 @@ import (
 
 func TestKeyProvider(t *testing.T) {
 	testKeyId := getKey(t)
+	usingMock := testKeyId == ""
 
-	if testKeyId == "" {
+	if usingMock {
 		testKeyId = "alias/my-mock-key"
-		injectDefaultMock()
+		injectDefaultMock(t)
 
 		t.Setenv("AWS_REGION", "us-east-1")
 		t.Setenv("AWS_ACCESS_KEY_ID", "accesskey")
 		t.Setenv("AWS_SECRET_ACCESS_KEY", "secretkey")
 	}
+
+	presentValidMeta := presentValidMetadata(t, testKeyId, usingMock)
 
 	compliancetest.ComplianceTest(
 		t,
@@ -34,6 +38,9 @@ func TestKeyProvider(t *testing.T) {
 							kms_key_id = "%s"
 							key_spec = "AES_256"
 							skip_credentials_validation = true // required for mocking
+							encryption_context = {
+								"test" = "test"
+							}
 						}`, testKeyId),
 					ValidHCL:   true,
 					ValidBuild: true,
@@ -198,14 +205,23 @@ func TestKeyProvider(t *testing.T) {
 			MetadataStructTestCases: map[string]compliancetest.MetadataStructTestCase[*Config, *keyMeta]{
 				"empty": {
 					ValidConfig: &Config{
-						KMSKeyID: testKeyId,
-						KeySpec:  "AES_256",
-
+						KMSKeyID:            testKeyId,
+						KeySpec:             "AES_256",
 						SkipCredsValidation: true, // Required for mocking
 					},
 					Meta:      &keyMeta{},
 					IsPresent: false,
 					IsValid:   false,
+				},
+				"present-valid": {
+					ValidConfig: &Config{
+						KMSKeyID:            testKeyId,
+						KeySpec:             "AES_256",
+						SkipCredsValidation: usingMock, // Required for mocking
+					},
+					Meta:      presentValidMeta,
+					IsPresent: true,
+					IsValid:   true,
 				},
 			},
 			ProvideTestCase: compliancetest.ProvideTestCase[*Config, *keyMeta]{
@@ -221,6 +237,9 @@ func TestKeyProvider(t *testing.T) {
 					if len(enc) == 0 {
 						return fmt.Errorf("encryption key is empty")
 					}
+					if !bytes.Equal(dec, enc) {
+						return fmt.Errorf("decryption key does not match encryption key")
+					}
 					return nil
 				},
 				ValidateMetadata: func(meta *keyMeta) error {
@@ -231,4 +250,25 @@ func TestKeyProvider(t *testing.T) {
 				},
 			},
 		})
+}
+
+func presentValidMetadata(t *testing.T, testKeyId string, usingMock bool) *keyMeta {
+	if usingMock {
+		return &keyMeta{CiphertextBlob: append([]byte(testKeyId), make([]byte, 32)...)}
+	}
+
+	provider, metaIn, err := (&Config{
+		KMSKeyID: testKeyId,
+		KeySpec:  "AES_256",
+	}).Build()
+	if err != nil {
+		t.Fatalf("failed to build key provider for present-valid metadata: %s", err)
+	}
+
+	_, meta, err := provider.Provide(metaIn)
+	if err != nil {
+		t.Fatalf("failed to generate present-valid metadata: %s", err)
+	}
+
+	return meta.(*keyMeta)
 }
