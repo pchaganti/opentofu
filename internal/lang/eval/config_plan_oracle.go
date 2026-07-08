@@ -9,6 +9,7 @@ import (
 	"context"
 
 	"github.com/opentofu/opentofu/internal/addrs"
+	"github.com/opentofu/opentofu/internal/lang/eval/internal/evalglue"
 	"github.com/opentofu/opentofu/internal/providers"
 	"github.com/opentofu/opentofu/internal/tfdiags"
 )
@@ -16,6 +17,7 @@ import (
 // A PlanningOracle provides information from the configuration that is needed
 // by the planning engine to help orchestrate the planning process.
 type PlanningOracle struct {
+	root      evalglue.CompiledModuleInstance
 	providers *managedProviders
 }
 
@@ -39,6 +41,10 @@ type PlanningOracle struct {
 // unless its provider instance is re-added to the configuration.
 func (o *PlanningOracle) ProviderInstance(ctx context.Context, addr addrs.AbsProviderInstanceCorrect) (providers.Interface, tfdiags.Diagnostics) {
 	return o.providers.ProviderInstance(ctx, addr)
+}
+
+func (o *PlanningOracle) DestroyProvisioners(ctx context.Context, addr addrs.AbsResourceInstance) []Provisioner {
+	return evalglue.DestroyProvisioners(ctx, o.root, addr)
 }
 
 func (o *PlanningOracle) Close(ctx context.Context) tfdiags.Diagnostics {

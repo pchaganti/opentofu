@@ -304,7 +304,7 @@ func (c *Context) newEngineApply(ctx context.Context, config *configs.Config, pl
 
 	log.Println("[WARN] Using apply implementation from the experimental language runtime")
 
-	if len(plan.ExecutionGraph) == 0 && !plan.Changes.Empty() {
+	if len(plan.ExecutionGraph) == 0 && !plan.Changes.ResourcesEmpty() {
 		diags = diags.Append(tfdiags.Sourceless(
 			tfdiags.Error,
 			"Saved plan contains no execution graph",
@@ -424,6 +424,24 @@ func (c *Context) newEngineApplyTracer() *applying.Tracer {
 		EndDataResourceInstanceRead: func(ctx context.Context, addr addrs.AbsResourceInstance, resultVal cty.Value, diags tfdiags.Diagnostics) {
 			c.eachHook(func(h Hook) (HookAction, error) {
 				return h.PostRefresh(addr, addrs.CurrentResourceInstanceObjectGeneration, cty.NullVal(cty.DynamicPseudoType), resultVal)
+			})
+		},
+
+		StartProvisionInstanceStep: func(ctx context.Context, addr addrs.AbsResourceInstance, typeName string) context.Context {
+			c.eachHook(func(h Hook) (HookAction, error) {
+				return h.PreProvisionInstanceStep(addr, typeName)
+			})
+			return ctx
+		},
+		StopProvisionInstanceStep: func(ctx context.Context, addr addrs.AbsResourceInstance, typeName string, diags tfdiags.Diagnostics) {
+			c.eachHook(func(h Hook) (HookAction, error) {
+				return h.PostProvisionInstanceStep(addr, typeName, diags.Err())
+			})
+		},
+		ProvisionOutput: func(ctx context.Context, addr addrs.AbsResourceInstance, typeName string, line string, configMarks cty.ValueMarks) {
+			c.eachHook(func(h Hook) (HookAction, error) {
+				h.ProvisionOutput(addr, typeName, line, configMarks)
+				return HookActionContinue, nil
 			})
 		},
 

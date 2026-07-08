@@ -172,6 +172,7 @@ func (c *ConfigInstance) DrivePlanning(ctx context.Context, buildGlue func(*Plan
 
 	// We can now initialize the planning oracle, before we start evaluating
 	// anything that might cause calls to the evalGlue object.
+	oracle.root = rootModuleInstance
 	oracle.providers = managedProviders
 	// Inject configured providers
 	evalGlue.providers = managedProviders
@@ -207,10 +208,9 @@ func (c *ConfigInstance) DrivePlanning(ctx context.Context, buildGlue func(*Plan
 	// Once checkAll has completed we should've either visited and evaluated
 	// everything as much as we can, so we can now just collect the result
 	// value and return.
-	outputsVal, moreDiags := rootModuleInstance.ResultValuer(ctx).Value(ctx)
-	diags = diags.Append(moreDiags)
+
 	return &PlanningResult{
-		RootModuleOutputs: configgraph.PrepareOutgoingValue(outputsVal),
+		RootModuleOutputs: CollectRootModuleOutputs(ctx, rootModuleInstance),
 		Glue:              glue,
 		Oracle:            oracle,
 	}, diags
@@ -237,7 +237,7 @@ type PlanningResult struct {
 	// This will contain unknown value placeholders for any part of an output
 	// value which depends on the result of an action that won't be taken
 	// until the apply phase.
-	RootModuleOutputs cty.Value
+	RootModuleOutputs RootModuleOutputs
 }
 
 type planningEvalGlue struct {
@@ -250,8 +250,8 @@ type planningEvalGlue struct {
 var _ evalglue.Glue = (*planningEvalGlue)(nil)
 
 // ProviderFunction implements evalglue.Glue.
-func (p *planningEvalGlue) ProviderFunction(ctx context.Context, provider addrs.Provider, providerInst configgraph.Maybe[*configgraph.ProviderInstance], pf addrs.ProviderFunction, rng hcl.Range) (function.Function, tfdiags.Diagnostics) {
-	if providerInst, ok := configgraph.GetKnown(providerInst); ok {
+func (p *planningEvalGlue) ProviderFunction(ctx context.Context, provider addrs.Provider, providerInst exprs.FromValue[*configgraph.ProviderInstance], pf addrs.ProviderFunction, rng hcl.Range) (function.Function, tfdiags.Diagnostics) {
+	if providerInst, ok := providerInst.ValueOk(); ok {
 		return p.providers.ConfiguredFunction(ctx, providerInst.Addr, pf, rng)
 	}
 
@@ -259,7 +259,7 @@ func (p *planningEvalGlue) ProviderFunction(ctx context.Context, provider addrs.
 }
 
 // ResourceInstanceValue implements evalglue.Glue.
-func (p *planningEvalGlue) ResourceInstanceValue(ctx context.Context, ri *configgraph.ResourceInstance, configVal cty.Value, providerInst configgraph.Maybe[*configgraph.ProviderInstance], riDeps addrs.Set[addrs.AbsResourceInstance]) (cty.Value, tfdiags.Diagnostics) {
+func (p *planningEvalGlue) ResourceInstanceValue(ctx context.Context, ri *configgraph.ResourceInstance, configVal cty.Value, providerInst exprs.FromValue[*configgraph.ProviderInstance], riDeps addrs.Set[addrs.AbsResourceInstance]) (cty.Value, tfdiags.Diagnostics) {
 	var diags tfdiags.Diagnostics
 
 	desired := &DesiredResourceInstance{
@@ -270,7 +270,15 @@ func (p *planningEvalGlue) ResourceInstanceValue(ctx context.Context, ri *config
 		ResourceType:              ri.Addr.Resource.Resource.Type,
 		ResourceMode:              ri.Addr.Resource.Resource.Mode,
 	}
-	if providerInst, ok := configgraph.GetKnown(providerInst); ok {
+	// FIXME: DesiredResourceInstance is using a possibly-nil pointer to
+	// addrs.AbsProviderInstanceCorrect as a legacy way to represent a
+	// provider instance address that might be unknown, since it was written
+	// before we had exprs.FromValue. We should eventually update that type
+	// so that its ProviderInstance field is
+	// exprs.FromValue[addrs.AbsProviderInstanceCorrect] but we'll shim to
+	// the legacy form for now.
+	unmarkedProviderInst, _ := providerInst.Unmark()
+	if providerInst, ok := unmarkedProviderInst.ValueOk(); ok {
 		desired.ProviderInstance = &providerInst.Addr
 	}
 
