@@ -10,8 +10,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
-	"github.com/go-logr/stdr"
+	"github.com/go-logr/logr"
 	"go.opentelemetry.io/contrib/exporters/autoexport"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
@@ -98,13 +99,17 @@ func OpenTelemetryInit(ctx context.Context) (context.Context, error) {
 	// that exporting should always be enabled and so will expect to find
 	// an OTLP server on localhost if no environment variables are set at all.
 	if os.Getenv(OTELExporterEnvVar) != "otlp" {
-		log.Printf("[TRACE] OpenTelemetry: %s not set, OTel tracing is not enabled", OTELExporterEnvVar)
 		return ctx, nil // By default, we just discard all telemetry calls
 	}
 
 	isTracingEnabled = true
 
-	log.Printf("[TRACE] OpenTelemetry: enabled")
+	// Wire OTel SDK internal logging through OpenTofu's global logger
+	// before initializing the tracer provider, so any SDK startup
+	// diagnostics are captured.
+	otel.SetLogger(logr.New(&otelLogSink{}))
+
+	log.Printf("[DEBUG] OpenTelemetry: tracing enabled via %s=otlp", OTELExporterEnvVar)
 
 	// Get service name from environment variable or use default
 	serviceName := DefaultServiceName
@@ -156,12 +161,110 @@ func OpenTelemetryInit(ctx context.Context) (context.Context, error) {
 	prop := propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{})
 	otel.SetTextMapPropagator(prop)
 
-	logger := stdr.New(log.New(os.Stdout, "", log.LstdFlags|log.Lshortfile))
-	otel.SetLogger(logger)
-
 	otel.SetErrorHandler(otel.ErrorHandlerFunc(func(err error) {
 		log.Printf("[ERROR] OpenTelemetry error: %s", err)
 	}))
 
 	return ctx, nil
+}
+
+// otelLogSink implements logr.LogSink to route OTel SDK internal logs
+// through OpenTofu's standard library log package (redirected to hclog)
+// with prefix-based log levels for compatibility with TF_LOG filtering.
+type otelLogSink struct {
+	name   string
+	values []any
+}
+
+var _ logr.LogSink = (*otelLogSink)(nil)
+
+func (s *otelLogSink) Init(info logr.RuntimeInfo) {}
+
+func (s *otelLogSink) Enabled(level int) bool {
+	return true
+}
+
+func (s *otelLogSink) Info(level int, msg string, keysAndValues ...interface{}) {
+	var prefix string
+	switch {
+	case level == 0:
+		prefix = "[INFO]"
+	case level <= 3:
+		prefix = "[DEBUG]"
+	default:
+		prefix = "[TRACE]"
+	}
+
+	var b strings.Builder
+	b.WriteString(prefix)
+	b.WriteString(" OpenTelemetry:")
+	if s.name != "" {
+		b.WriteString(" [")
+		b.WriteString(s.name)
+		b.WriteString("]")
+	}
+	b.WriteString(" ")
+	b.WriteString(msg)
+
+	writeLogValues(&b, s.values)
+	writeLogValues(&b, keysAndValues)
+
+	log.Print(b.String())
+}
+
+func (s *otelLogSink) Error(err error, msg string, keysAndValues ...interface{}) {
+	var b strings.Builder
+	b.WriteString("[ERROR] OpenTelemetry:")
+	if s.name != "" {
+		b.WriteString(" [")
+		b.WriteString(s.name)
+		b.WriteString("]")
+	}
+	b.WriteString(" ")
+	b.WriteString(msg)
+	if err != nil {
+		b.WriteString(": ")
+		b.WriteString(err.Error())
+	}
+	writeLogValues(&b, s.values)
+	writeLogValues(&b, keysAndValues)
+
+	log.Print(b.String())
+}
+
+// writeLogValues formats interleaved key-value pairs into the builder.
+// Odd-length slices print the trailing key without a value.
+func writeLogValues(b *strings.Builder, kv []any) {
+	if len(kv) == 0 {
+		return
+	}
+	b.WriteString(" ")
+	for i := 0; i < len(kv); i += 2 {
+		if i > 0 {
+			b.WriteString(" ")
+		}
+		fmt.Fprint(b, kv[i])
+		if i+1 < len(kv) {
+			b.WriteString("=")
+			fmt.Fprint(b, kv[i+1])
+		}
+	}
+}
+
+func (s *otelLogSink) WithValues(keysAndValues ...interface{}) logr.LogSink {
+	return &otelLogSink{
+		name:   s.name,
+		values: append(s.values, keysAndValues...),
+	}
+}
+
+func (s *otelLogSink) WithName(name string) logr.LogSink {
+	newName := name
+	if s.name != "" {
+		newName = s.name + "." + name
+	}
+	return &otelLogSink{
+		name:   newName,
+		values: s.values,
+	}
 }
