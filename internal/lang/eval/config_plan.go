@@ -269,6 +269,7 @@ func (p *planningEvalGlue) ResourceInstanceValue(ctx context.Context, ri *config
 		RequiredResourceInstances: riDeps,
 		ResourceType:              ri.Addr.Resource.Resource.Type,
 		ResourceMode:              ri.Addr.Resource.Resource.Mode,
+		IgnoreChangesPaths:        ri.IgnoreChangesPaths,
 	}
 	// FIXME: DesiredResourceInstance is using a possibly-nil pointer to
 	// addrs.AbsProviderInstanceCorrect as a legacy way to represent a
