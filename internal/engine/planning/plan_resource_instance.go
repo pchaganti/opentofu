@@ -321,18 +321,18 @@ func (rios *resourceInstanceObjects) StateDependenciesAndDependents(of addrs.Abs
 	}
 }
 
-// AllDependenciesAndDependents combines the results of
-// [*resourceInstanceObjects.ConfigDependenciesAndDependents] and
-// [*resourceInstanceObjects.StateDependenciesAndDependents] into a single
+// AllDependents combines the results of
+// [*resourceInstanceObjects.ConfigDependents] and
+// [*resourceInstanceObjects.StateDependents] into a single
 // flat sequence.
-func (rios *resourceInstanceObjects) AllDependenciesAndDependents(of addrs.AbsResourceInstanceObject) iter.Seq[addrs.AbsResourceInstanceObject] {
+func (rios *resourceInstanceObjects) AllDependents(of addrs.AbsResourceInstanceObject) iter.Seq[addrs.AbsResourceInstanceObject] {
 	return func(yield func(addrs.AbsResourceInstanceObject) bool) {
-		for addr := range rios.ConfigDependenciesAndDependents(of) {
+		for addr := range rios.ConfigDependents(of) {
 			if !yield(addr) {
 				return
 			}
 		}
-		for addr := range rios.StateDependenciesAndDependents(of) {
+		for addr := range rios.StateDependents(of) {
 			if !yield(addr) {
 				return
 			}
@@ -356,6 +356,13 @@ func newResourceInstanceObjectsBuilder() *resourceInstanceObjectsBuilder {
 			reverseStateDeps:  addrs.MakeMap[addrs.AbsResourceInstanceObject, addrs.Set[addrs.AbsResourceInstanceObject]](),
 		},
 	}
+}
+
+func (b *resourceInstanceObjectsBuilder) Get(addr addrs.AbsResourceInstanceObject) (*resourceInstanceObject, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.result.objects.GetOk(addr)
 }
 
 // Put inserts the given resource instance object into the collection.

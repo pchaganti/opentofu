@@ -100,7 +100,6 @@ var (
 	ExperimentalBugSpuriousReplace   = ExperimentalFlag{"Bug Spurious Replace", true} // New runtime proposes replace where old runtime would've called for update
 	ExperimentalBugProviderPrivate   = ExperimentalFlag{"Bug Provider Private Data Not Preserved", false}
 	ExperimentalBugCircularReference = ExperimentalFlag{"Bug Circular Reference", false}
-	ExperimentalBugCBDDownstream     = ExperimentalFlag{"Bug CBD Propagates Downstream", false}
 
 	ExperimentalChangeDiagWording     = ExperimentalFlag{"Change Different Diagnostic Wording", false}
 	ExperimentalChangeErrorEarly      = ExperimentalFlag{"Change Detect Error Earlier", false}
@@ -133,7 +132,7 @@ var (
 	ExperimentalFeatureUpgradeUnwanted   = ExperimentalFlag{"Missing Upgrade Orphan or Deposed Resource Instance State", false}
 	ExperimentalFeatureHooks             = ExperimentalFlag{"Missing Hooks", true}
 	ExperimentalFeatureTarget            = ExperimentalFlag{"Missing Targeting", false}
-	ExperimentalFeatureReplaceTB         = ExperimentalFlag{"Missing replace_triggered_by", false}
+	ExperimentalFeatureReplaceTB         = ExperimentalFlag{"Missing replace_triggered_by", true}
 	ExperimentalFeatureProvisioner       = ExperimentalFlag{"Missing Provisioners", true}
 	ExperimentalFeatureDependsOn         = ExperimentalFlag{"Missing Depends On", true}
 	ExperimentalFeatureIgnoreChanges     = ExperimentalFlag{"Missing Ignore Changes", true}
