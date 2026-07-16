@@ -96,6 +96,24 @@ Ideally, make sure these changes go in as the last PR before the release.
 
 ---
 
+## Double check proper traceability of the included changes
+
+For better traceability, backported changes should link one of the following:
+* the link to the PR that added the change in the `main` branch
+* the link to the issue that the change fixes
+
+Ideally, all the backports should be done through backporting PRs, whose description should include one (or both) of the links above.
+
+If the backport is done through pushing directly to the targeted version branch, the commit message should include one (or both) of the links above.
+
+> [!WARNING]
+Right before issuing the release, ensure that all of the included changes follow the rules above.
+If not, a comment should be added, to either the PR or the issue, with the commit that actually backported the change.
+>
+> By doing so, it will help with the forward tracing (ie: from the issue to the commit) but will not provide back tracing (from the commit back to the issue).
+Therefore, this is a last resort, in cases where neither of the recommended options above cannot be done anymore (aka it might require rebasing on a branch where it is not allowed).
+
+
 ## Tagging the release
 
 Now that you have the files up to date, do the following:
@@ -205,12 +223,6 @@ You can find the full diff [here](https://github.com/opentofu/opentofu/compare/v
 For point releases, simply copy the section from the [CHANGELOG.md](CHANGELOG.md) file.
 
 </details>
-
----
-
-## Updating `get.opentofu.org`
-
-In order for the installer script to work, you will need to update the https://get.opentofu.org/tofu/api.json file. You can do this by logging in to Cloudflare and go to the [`opentofu-get` project in Cloudflare Pages](https://dash.cloudflare.com/84161f72ecc1f0274ab2fa7241f64249/pages/view/opentofu-get). Here click the three dots on the latest production deployment and click `Retry deployment`.
 
 ---
 
