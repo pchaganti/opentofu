@@ -25,7 +25,7 @@ func normalPlan(ctx context.Context, opts *PlanOpts, prevRoundState *states.Stat
 	var diags tfdiags.Diagnostics
 	var closeConfiguredProviders func(ctx context.Context) tfdiags.Diagnostics
 
-	planCtx := newPlanContext(configInst.EvalContext(), prevRoundState, providers)
+	planCtx := newPlanContext(configInst.EvalContext(), prevRoundState, providers, opts)
 
 	// This configInst.DrivePlanning call blocks until the evaluator has
 	// visited all expressions in the configuration and calls
@@ -122,6 +122,8 @@ func normalPlan(ctx context.Context, opts *PlanOpts, prevRoundState *states.Stat
 	// planCtx as a mutable object in this function doesn't seem necessary
 	// anymore since we only actually care about the results from Close here.
 	intermediate, moreDiags := planCtx.Close(ctx)
+	diags = diags.Append(moreDiags)
+	moreDiags = intermediate.CheckPreventDestroy(ctx, planGlue.oracle)
 	diags = diags.Append(moreDiags)
 	plan, moreDiags := finalizePlan(ctx, intermediate, providers)
 	diags = diags.Append(moreDiags)

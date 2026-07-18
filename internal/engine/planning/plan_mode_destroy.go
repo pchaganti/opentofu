@@ -39,11 +39,11 @@ import (
 // This mode therefore takes quite a different strategy than normal mode where
 // we rely on the prior state (after refreshing) as the "result value" for
 // each managed resource instance.
-func destroyPlan(ctx context.Context, _ *PlanOpts, prevRoundState *states.State, configInst *eval.ConfigInstance, providers plugins.Providers) (*plans.Plan, tfdiags.Diagnostics) {
+func destroyPlan(ctx context.Context, opts *PlanOpts, prevRoundState *states.State, configInst *eval.ConfigInstance, providers plugins.Providers) (*plans.Plan, tfdiags.Diagnostics) {
 	var diags tfdiags.Diagnostics
 	var closeConfiguredProviders func(ctx context.Context) tfdiags.Diagnostics
 
-	planCtx := newPlanContext(configInst.EvalContext(), prevRoundState, providers)
+	planCtx := newPlanContext(configInst.EvalContext(), prevRoundState, providers, opts)
 
 	// This configInst.DrivePlanning call blocks until the evaluator has
 	// visited all expressions in the configuration and calls
@@ -142,6 +142,8 @@ func destroyPlan(ctx context.Context, _ *PlanOpts, prevRoundState *states.State,
 	intermediate, moreDiags := planCtx.Close(ctx)
 	diags = diags.Append(moreDiags)
 	intermediate.Destroying = true
+	moreDiags = intermediate.CheckPreventDestroy(ctx, dpg.normalGlue.oracle)
+	diags = diags.Append(moreDiags)
 	plan, moreDiags := finalizePlan(ctx, intermediate, providers)
 	diags = diags.Append(moreDiags)
 	moreDiags = closeConfiguredProviders(ctx)
