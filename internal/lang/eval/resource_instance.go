@@ -10,7 +10,33 @@ import (
 
 	"github.com/opentofu/opentofu/internal/addrs"
 	"github.com/opentofu/opentofu/internal/lang/eval/internal/configgraph"
+	"github.com/opentofu/opentofu/internal/lang/eval/internal/evalglue"
 )
+
+// ConfiguredResourceInstanceObjectMeta represents the subset of metadata
+// about a resource instance object that comes from the configuration, based
+// on configuration arguments that could potentially vary between language
+// editions.
+//
+// It's up to the specific language edition implementation to decide how to
+// populate an object of this type. Some fields will be based on per-resource
+// or per-resource-instance configuration elements shared across multiple
+// objects, but at this level of abstraction those decisions are already made
+// and we must not assume anything is necessarily shared by objects belonging
+// to the same resource or resource instance.
+//
+// Note that this is NOT what you should use directly in the planning or
+// applying engines as the full metadata for a resource instance object.
+// Instead, this should typically be combined with information taken from the
+// prior state (in a way that's outside the scope of this package) to determine
+// the full effective metadata for an object.
+//
+// The design of this type is biased towards the needs of the "managed" resource
+// mode since that represents our primary functionality and the most complicated
+// set of available metadata features. Nonetheless we do still use this type
+// for other resource modes and just leave the irrelevant fields unpopulated
+// for objects of those modes.
+type ConfiguredResourceInstanceObjectMeta = evalglue.ConfiguredResourceInstanceObjectMeta
 
 // DesiredResourceInstance describes a resource instance that is part of
 // the desired state (i.e. declared in the configuration).
@@ -149,16 +175,7 @@ type DesiredResourceInstance struct {
 	// Any resource instance mentioned in this collection will always also
 	// appear in RequiredResourceInstances.
 	ReplaceTriggeredBy []ResourceInstanceAttributePath
-
-	// CreateProvisioners are the provisioners that will be run if the resource
-	// is created
-	CreateProvisioners []Provisioner
 }
-
-// Exposing configgraph details is not idea, but it's a very simple structure
-// that is probably not worth duplicating right now
-type Provisioner = configgraph.Provisioner
-type ResourceInstanceAttributePath = configgraph.ResourceInstanceAttributePath
 
 // IsPlaceholder returns true if this object is acting as a placeholder for
 // zero or more resource instances whose full expansion is not yet known.
@@ -180,3 +197,12 @@ type ResourceInstanceAttributePath = configgraph.ResourceInstanceAttributePath
 func (ri *DesiredResourceInstance) IsPlaceholder() bool {
 	return ri.Addr.IsPlaceholder()
 }
+
+// ResourceProvisioner represents a single provisioner configured for a
+// resource instance object.
+type ResourceProvisioner = evalglue.ResourceProvisioner
+
+// FIXME: Don't directly expose a configgraph type here, since that package
+// is supposed to be an implementation detail of tofu2024 and any other future
+// HCL-based language editions.
+type ResourceInstanceAttributePath = configgraph.ResourceInstanceAttributePath

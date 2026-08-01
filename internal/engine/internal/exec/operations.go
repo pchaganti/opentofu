@@ -48,9 +48,24 @@ type Operations interface {
 	//// (mode-specific operations follow below)
 	//////////////////////////////////////////////////////////////////////////////
 
+	// ResourceInstanceCurrentMeta returns the metadata for the given resource
+	// instance's "current" (non-deposed) object address, providing information
+	// that is relevant regardless of what action is being taken for the object
+	// or whether it is "desired" or not.
+	//
+	// For deposed object metadata, use [Operations.ManagedDeposedMeta] instead.
+	ResourceInstanceCurrentMeta(
+		ctx context.Context,
+		instAddr addrs.AbsResourceInstance,
+		prior *ResourceInstanceObject,
+	) (*ResourceInstanceObjectMeta, tfdiags.Diagnostics)
+
 	// ResourceInstanceDesired returns a representation of the "desired state"
-	// for the given resource instance, or a nil pointer if the given resource
-	// instance is not currently declared at all.
+	// for the resource instance object whose metadata is provided, or a nil
+	// pointer if the given resource instance is not currently declared at all.
+	//
+	// Deposed objects cannot be "desired", so only metadata for current objects
+	// may be passed to this operation.
 	//
 	// Real implementations of this use the configuration evaluator to finalize
 	// the resource instance configuration based on other values that have been
@@ -63,7 +78,7 @@ type Operations interface {
 	// resource instance.
 	ResourceInstanceDesired(
 		ctx context.Context,
-		instAddr addrs.AbsResourceInstance,
+		meta *ResourceInstanceObjectMeta,
 	) (*eval.DesiredResourceInstance, tfdiags.Diagnostics)
 
 	// ResourceInstancePrior returns a representation of the "prior state" for
@@ -112,6 +127,7 @@ type Operations interface {
 	// or must return at least one error diagnostic.
 	ManagedFinalPlan(
 		ctx context.Context,
+		metadata *ResourceInstanceObjectMeta,
 		desired *eval.DesiredResourceInstance,
 		prior *ResourceInstanceObject,
 		plannedVal cty.Value,
@@ -176,6 +192,19 @@ type Operations interface {
 		object *ResourceInstanceObject,
 		deletePlan *ManagedResourceObjectFinalPlan,
 	) (*ResourceInstanceObject, tfdiags.Diagnostics)
+
+	// ManagedDeposedMeta returns the metadata for a deposed object belonging
+	// to the given resource instance, providing information that might be
+	// needed in order to delete the object.
+	//
+	// For current object metadata, use [Operations.ResourceInstanceCurrentMeta]
+	// instead.
+	ManagedDeposedMeta(
+		ctx context.Context,
+		instAddr addrs.AbsResourceInstance,
+		deposedKey states.DeposedKey,
+		prior *ResourceInstanceObject,
+	) (*ResourceInstanceObjectMeta, tfdiags.Diagnostics)
 
 	// ManagedAlreadyDeposed returns a deposed object from the prior state,
 	// nor nil if there is no such object.
