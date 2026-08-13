@@ -42,7 +42,7 @@ require (
 	github.com/chzyer/readline v1.5.1
 	github.com/cli/browser v1.3.0
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc
-	github.com/go-logr/logr v1.4.3
+	github.com/go-logr/logr v1.4.4
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/google/go-cmp v0.7.0
 	github.com/google/uuid v1.6.0
@@ -66,7 +66,7 @@ require (
 	github.com/jmespath/go-jmespath v0.4.0
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0
 	github.com/lib/pq v1.11.2
-	github.com/mattn/go-isatty v0.0.20
+	github.com/mattn/go-isatty v0.0.24
 	github.com/mattn/go-shellwords v1.0.12
 	github.com/mitchellh/cli v1.1.5
 	github.com/mitchellh/colorstring v0.0.0-20190213212951-d06e56a500db
@@ -87,7 +87,7 @@ require (
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/sts v1.1.11
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/tag v1.1.0
 	github.com/tencentyun/cos-go-sdk-v5 v0.7.70
-	github.com/ulikunitz/xz v0.5.15
+	github.com/ulikunitz/xz v0.5.16
 	github.com/xanzy/ssh-agent v0.3.3
 	github.com/xlab/treeprint v1.2.0
 	github.com/zclconf/go-cty v1.18.1
