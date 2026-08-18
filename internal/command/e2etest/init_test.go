@@ -25,13 +25,13 @@ func TestInitProviders(t *testing.T) {
 	t.Parallel()
 
 	// This test reaches out to registry.opentofu.org to download the
-	// template provider, so it can only run if network access is allowed.
+	// cloudinit provider, so it can only run if network access is allowed.
 	// We intentionally don't try to stub this here, because there's already
 	// a stubbed version of this in the "command" package and so the goal here
 	// is to test the interaction with the real repository.
 	skipIfCannotAccessNetwork(t)
 
-	fixturePath := filepath.Join("testdata", "template-provider")
+	fixturePath := filepath.Join("testdata", "cloudinit-provider")
 	tf := e2e.NewBinary(t, tofuBin, fixturePath)
 
 	stdout, stderr, err := tf.Run("init")
@@ -47,7 +47,7 @@ func TestInitProviders(t *testing.T) {
 		t.Errorf("success message is missing from output:\n%s", stdout)
 	}
 
-	if !strings.Contains(stdout, "- Installing hashicorp/template v") {
+	if !strings.Contains(stdout, "- Installing hashicorp/cloudinit v") {
 		t.Errorf("provider download message is missing from output:\n%s", stdout)
 		t.Logf("(this can happen if you have a copy of the plugin in one of the global plugin search dirs)")
 	}
@@ -379,17 +379,25 @@ func TestInit_fromModule(t *testing.T) {
 	t.Parallel()
 
 	// This test reaches out to registry.opentofu.org and github.com to lookup
-	// and fetch a module.
+	// and fetch the hashicorp/cloudinit provider.
 	skipIfCannotAccessNetwork(t)
 
 	fixturePath := filepath.Join("testdata", "empty")
 	tf := e2e.NewBinary(t, tofuBin, fixturePath)
 
-	cmd := tf.Cmd("init", "-from-module=hashicorp/vault/aws")
+	// Using an absolute path here forces the use of go-getter's "file getter",
+	// which means we can exercise many of the same codepaths from the module
+	// installer without actually needing to publish a remote module somewhere.
+	fromModuleFixturePath, err := filepath.Abs(filepath.Join("testdata", "init-from-module"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := tf.Cmd("init", "-from-module="+fromModuleFixturePath)
 	cmd.Stdin = nil
 	cmd.Stderr = &bytes.Buffer{}
 
-	err := cmd.Run()
+	err = cmd.Run()
 	if err != nil {
 		t.Errorf("unexpected error: %s", err)
 	}
@@ -399,12 +407,12 @@ func TestInit_fromModule(t *testing.T) {
 		t.Errorf("unexpected stderr output:\n%s", stderr)
 	}
 
-	content, err := tf.ReadFile("main.tf")
+	content, err := tf.ReadFile("init-from-module.tf")
 	if err != nil {
-		t.Fatalf("failed to read main.tf: %s", err)
+		t.Fatalf("failed to read init-from-module.tf: %s", err)
 	}
-	if !bytes.Contains(content, []byte("vault")) {
-		t.Fatalf("main.tf doesn't appear to be a vault configuration: \n%s", content)
+	if !bytes.Contains(content, []byte("cloudinit_config")) {
+		t.Fatalf("init-from-module.tf doesn't seem to include a cloudinit_config data resource: \n%s", content)
 	}
 }
 
