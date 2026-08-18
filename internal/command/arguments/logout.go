@@ -14,43 +14,28 @@ type Logout struct {
 	// Host represents the host that OpenTofu will try to log out of
 	Host string
 
-	// ViewOptions specifies which view options to use
-	ViewOptions ViewOptions
-	// Vars holds and provides information for the flags related to variables that a user can give into the process
-	Vars *Vars
+	// View represents the global view options
+	View *View
+}
+
+// BindLogout registers CLI arguments, returning a Logout value and it's corresponding hooks.
+func BindLogout(cli *CommandLine) *Logout {
+	arguments := Logout{
+		View: BindView(cli, viewFlagNoInput),
+	}
+
+	cli.ArgHelp = "The logout command expects exactly one argument: the host to log out of."
+	cli.PositionalArg(&arguments.Host, "hostname", false)
+
+	return &arguments
 }
 
 // ParseLogout processes CLI arguments, returning a Logout value, a closer function, and errors.
 // If errors are encountered, a Logout value is still returned representing
 // the best effort interpretation of the arguments.
 func ParseLogout(args []string) (*Logout, func(), tfdiags.Diagnostics) {
-	var diags tfdiags.Diagnostics
-	arguments := &Logout{}
-
-	cmdFlags := defaultFlagSet("logout")
-	arguments.ViewOptions.AddFlags(cmdFlags, false)
-	if err := cmdFlags.Parse(args); err != nil {
-		diags = diags.Append(tfdiags.Sourceless(
-			tfdiags.Error,
-			"Failed to parse command-line flags",
-			err.Error(),
-		))
-	}
-
-	closer, moreDiags := arguments.ViewOptions.Parse()
-	diags = diags.Append(moreDiags)
-	if diags.HasErrors() {
-		return arguments, closer, diags
-	}
-
-	if len(cmdFlags.Args()) != 1 {
-		diags = diags.Append(tfdiags.Sourceless(
-			tfdiags.Error,
-			"Unexpected argument",
-			"The logout command expects exactly one argument: the host to log out of.",
-		))
-		return arguments, closer, diags
-	}
-	arguments.Host = cmdFlags.Args()[0]
+	cli := new(CommandLine)
+	arguments := BindLogout(cli)
+	closer, diags := cli.parseWithHooks("logout", args)
 	return arguments, closer, diags
 }

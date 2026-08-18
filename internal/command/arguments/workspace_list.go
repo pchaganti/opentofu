@@ -10,41 +10,24 @@ import (
 )
 
 type WorkspaceList struct {
-	// ViewOptions contains the options that allows the user to configure different types of outputs
-	// from the current command.
-	ViewOptions ViewOptions
+	// View represents the global view options
+	View *View
 
 	// Vars holds the information that might be needed to be given through `-var`/`-var-file`.
 	Vars *Vars
 }
 
+// BindWorkspaceList registers CLI arguments, returning a WorkspaceList value and it's corresponding hooks.
+func BindWorkspaceList(cli *CommandLine) *WorkspaceList {
+	return &WorkspaceList{
+		View: BindView(cli, viewFlagNoInput),
+		Vars: BindVars(cli),
+	}
+}
+
 func ParseWorkspaceList(args []string) (*WorkspaceList, func(), tfdiags.Diagnostics) {
-	var diags tfdiags.Diagnostics
-
-	ret := &WorkspaceList{
-		Vars: &Vars{},
-	}
-
-	cmdFlags := extendedFlagSet("workspace list", nil, ret.Vars)
-	ret.ViewOptions.AddFlags(cmdFlags, false)
-
-	if err := cmdFlags.Parse(args); err != nil {
-		diags = diags.Append(tfdiags.Sourceless(
-			tfdiags.Error,
-			"Failed to parse command-line flags",
-			err.Error(),
-		))
-	}
-
-	if len(cmdFlags.Args()) > 0 {
-		diags = diags.Append(tfdiags.Sourceless(
-			tfdiags.Error,
-			"Unexpected argument",
-			"Too many command line arguments. Did you mean to use -chdir?",
-		))
-	}
-
-	closer, moreDiags := ret.ViewOptions.Parse()
-	diags = diags.Append(moreDiags)
+	cli := new(CommandLine)
+	ret := BindWorkspaceList(cli)
+	closer, diags := cli.parseWithHooks("workspace list", args)
 	return ret, closer, diags
 }

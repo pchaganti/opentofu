@@ -6,26 +6,49 @@
 package arguments
 
 import (
-	"flag"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/opentofu/opentofu/internal/tfdiags"
 )
 
+// Legacy helpers
+func BindStateBackupFlag(cli *CommandLine, def string) *State {
+	s := BindState(cli, stateFlagBackup)
+	cli.PreHook(func() tfdiags.Diagnostics {
+		if s.BackupPath == "" {
+			s.BackupPath = def
+		}
+		return nil
+	})
+	return s
+}
+func BindStateInFlag(cli *CommandLine, def string) *State {
+	s := BindState(cli, stateFlagStateIn)
+	cli.PreHook(func() tfdiags.Diagnostics {
+		if s.StatePath == "" {
+			s.StatePath = def
+		}
+		return nil
+	})
+	return s
+}
+
 func TestStateFlagsParsing(t *testing.T) {
+
 	testCases := map[string]struct {
 		args     []string
-		register func(s *State, f *flag.FlagSet)
+		register func(cli *CommandLine) *State
 		want     *State
 		wantErr  error
 	}{
 		"defaults": {
 			args: nil,
-			register: func(s *State, f *flag.FlagSet) {
-				s.addFlags(f, stateFlagAll)
+			register: func(cli *CommandLine) *State {
+				return BindState(cli, stateFlagAll)
 			},
 			want: stateArgsWithDefaults(func(v *State) {
 				v.Lock = true
@@ -33,8 +56,8 @@ func TestStateFlagsParsing(t *testing.T) {
 		},
 		"lock": {
 			args: []string{"-lock=false"},
-			register: func(s *State, f *flag.FlagSet) {
-				s.addFlags(f, stateFlagAll)
+			register: func(cli *CommandLine) *State {
+				return BindState(cli, stateFlagAll)
 			},
 			want: stateArgsWithDefaults(func(v *State) {
 				v.Lock = false
@@ -42,8 +65,8 @@ func TestStateFlagsParsing(t *testing.T) {
 		},
 		"lockTimeout": {
 			args: []string{"-lock-timeout=2s"},
-			register: func(s *State, f *flag.FlagSet) {
-				s.addFlags(f, stateFlagAll)
+			register: func(cli *CommandLine) *State {
+				return BindState(cli, stateFlagAll)
 			},
 			want: stateArgsWithDefaults(func(v *State) {
 				v.LockTimeout = 2 * time.Second
@@ -52,8 +75,8 @@ func TestStateFlagsParsing(t *testing.T) {
 		},
 		"state": {
 			args: []string{"-state=/path/to/state"},
-			register: func(s *State, f *flag.FlagSet) {
-				s.addFlags(f, stateFlagAll)
+			register: func(cli *CommandLine) *State {
+				return BindState(cli, stateFlagAll)
 			},
 			want: stateArgsWithDefaults(func(v *State) {
 				v.StatePath = "/path/to/state"
@@ -62,8 +85,8 @@ func TestStateFlagsParsing(t *testing.T) {
 		},
 		"stateOut": {
 			args: []string{"-state-out=/path/to/output/state"},
-			register: func(s *State, f *flag.FlagSet) {
-				s.addFlags(f, stateFlagAll)
+			register: func(cli *CommandLine) *State {
+				return BindState(cli, stateFlagAll)
 			},
 			want: stateArgsWithDefaults(func(v *State) {
 				v.StateOutPath = "/path/to/output/state"
@@ -72,8 +95,8 @@ func TestStateFlagsParsing(t *testing.T) {
 		},
 		"backup": {
 			args: []string{"-backup=/path/to/state/backup"},
-			register: func(s *State, f *flag.FlagSet) {
-				s.addFlags(f, stateFlagAll)
+			register: func(cli *CommandLine) *State {
+				return BindState(cli, stateFlagAll)
 			},
 			want: stateArgsWithDefaults(func(v *State) {
 				v.BackupPath = "/path/to/state/backup"
@@ -88,8 +111,8 @@ func TestStateFlagsParsing(t *testing.T) {
 				"-lock-timeout=2s",
 				"-lock=false",
 			},
-			register: func(s *State, f *flag.FlagSet) {
-				s.addFlags(f, stateFlagAll)
+			register: func(cli *CommandLine) *State {
+				return BindState(cli, stateFlagAll)
 			},
 			want: stateArgsWithDefaults(func(v *State) {
 				v.BackupPath = "/path/to/state/backup"
@@ -104,8 +127,8 @@ func TestStateFlagsParsing(t *testing.T) {
 				"-backup=/path/to/state/backup",
 				"-unknown=foo",
 			},
-			register: func(s *State, f *flag.FlagSet) {
-				s.addFlags(f, stateFlagAll)
+			register: func(cli *CommandLine) *State {
+				return BindState(cli, stateFlagAll)
 			},
 			want: stateArgsWithDefaults(func(v *State) {
 				v.BackupPath = "/path/to/state/backup"
@@ -115,8 +138,8 @@ func TestStateFlagsParsing(t *testing.T) {
 		},
 		"register only backup flag - no flags provided": {
 			args: []string{},
-			register: func(s *State, f *flag.FlagSet) {
-				s.AddBackupFlag(f, "-")
+			register: func(cli *CommandLine) *State {
+				return BindStateBackupFlag(cli, "-")
 			},
 			want: stateArgsWithDefaults(func(v *State) {
 				v.BackupPath = "-" // the provided different default
@@ -124,8 +147,8 @@ func TestStateFlagsParsing(t *testing.T) {
 		},
 		"register only backup flag - with backup flag": {
 			args: []string{"-backup=/path/to/backup"},
-			register: func(s *State, f *flag.FlagSet) {
-				s.AddBackupFlag(f, "-")
+			register: func(cli *CommandLine) *State {
+				return BindStateBackupFlag(cli, "-")
 			},
 			want: stateArgsWithDefaults(func(v *State) {
 				v.BackupPath = "/path/to/backup"
@@ -133,8 +156,8 @@ func TestStateFlagsParsing(t *testing.T) {
 		},
 		"register only backup flag - unregistered flag": {
 			args: []string{"-backup=/path/to/backup", "-lock=false"},
-			register: func(s *State, f *flag.FlagSet) {
-				s.AddBackupFlag(f, "-")
+			register: func(cli *CommandLine) *State {
+				return BindStateBackupFlag(cli, "-")
 			},
 			want: stateArgsWithDefaults(func(v *State) {
 				v.BackupPath = "/path/to/backup"
@@ -143,8 +166,8 @@ func TestStateFlagsParsing(t *testing.T) {
 		},
 		"register only stateIn flag - no flags provided": {
 			args: []string{},
-			register: func(s *State, f *flag.FlagSet) {
-				s.AddStateInFlag(f, "default.tfstate")
+			register: func(cli *CommandLine) *State {
+				return BindStateInFlag(cli, "default.tfstate")
 			},
 			want: stateArgsWithDefaults(func(v *State) {
 				v.StatePath = "default.tfstate" // the provided different default
@@ -152,8 +175,8 @@ func TestStateFlagsParsing(t *testing.T) {
 		},
 		"register only stateIn flag - with state flag": {
 			args: []string{"-state=/path/to/state"},
-			register: func(s *State, f *flag.FlagSet) {
-				s.AddStateInFlag(f, "default.tfstate")
+			register: func(cli *CommandLine) *State {
+				return BindStateInFlag(cli, "default.tfstate")
 			},
 			want: stateArgsWithDefaults(func(v *State) {
 				v.StatePath = "/path/to/state"
@@ -161,8 +184,8 @@ func TestStateFlagsParsing(t *testing.T) {
 		},
 		"register only stateIn flag - unregistered flag": {
 			args: []string{"-state=/path/to/state", "-lock=false"},
-			register: func(s *State, f *flag.FlagSet) {
-				s.AddStateInFlag(f, "-")
+			register: func(cli *CommandLine) *State {
+				return BindStateInFlag(cli, "-")
 			},
 			want: stateArgsWithDefaults(func(v *State) {
 				v.StatePath = "/path/to/state"
@@ -171,18 +194,17 @@ func TestStateFlagsParsing(t *testing.T) {
 		},
 	}
 
-	cmpOpts := cmpopts.IgnoreUnexported()
-
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			s := &State{}
-			f := defaultFlagSet("test")
-			tc.register(s, f)
-			err := f.Parse(tc.args)
-			if diff := cmp.Diff(fmt.Sprintf("%s", tc.wantErr), fmt.Sprintf("%s", err)); diff != "" {
-				t.Errorf("unexpected error (-want,+got)\n%s", diff)
+			var cli CommandLine
+			s := tc.register(&cli)
+
+			_, diags := cli.parseWithHooks("test", tc.args)
+
+			if want, got := fmt.Sprintf("%s", tc.wantErr), fmt.Sprintf("%s", diags.Err()); !strings.Contains(got, want) {
+				t.Errorf("wanted error: %q, got error %q", want, got)
 			}
-			if diff := cmp.Diff(tc.want, s, cmpOpts); diff != "" {
+			if diff := cmp.Diff(tc.want, s); diff != "" {
 				t.Errorf("unexpected result (-want,+got)\n%s", diff)
 			}
 		})
@@ -191,21 +213,22 @@ func TestStateFlagsParsing(t *testing.T) {
 
 func TestStateFlagsRegistering(t *testing.T) {
 	testCases := map[string]struct {
-		register func(s *State, f *flag.FlagSet)
+		register func(cli *CommandLine) *State
 		args     []string
 		want     *State
 		wantErr  error
 	}{
 		"no flag registered": {
-			register: func(s *State, f *flag.FlagSet) {
+			register: func(cli *CommandLine) *State {
+				return new(State)
 			},
 			args:    []string{"-lock=false"},
 			want:    stateArgsWithDefaults(func(v *State) {}),
 			wantErr: fmt.Errorf("flag provided but not defined: -lock"),
 		},
 		"only lock flags registered": {
-			register: func(s *State, f *flag.FlagSet) {
-				s.addFlags(f, stateFlagLock)
+			register: func(cli *CommandLine) *State {
+				return BindState(cli, stateFlagLock)
 			},
 			args: []string{
 				"-lock=false",
@@ -217,8 +240,8 @@ func TestStateFlagsRegistering(t *testing.T) {
 			}),
 		},
 		"lock and state in": {
-			register: func(s *State, f *flag.FlagSet) {
-				s.addFlags(f, stateFlagLock|stateFlagStateIn)
+			register: func(cli *CommandLine) *State {
+				return BindState(cli, stateFlagLock|stateFlagStateIn)
 			},
 			args: []string{
 				"-lock=false",
@@ -232,8 +255,8 @@ func TestStateFlagsRegistering(t *testing.T) {
 			}),
 		},
 		"lock, state in and state out": {
-			register: func(s *State, f *flag.FlagSet) {
-				s.addFlags(f, stateFlagLock|stateFlagStateIn|stateFlagStateOut)
+			register: func(cli *CommandLine) *State {
+				return BindState(cli, stateFlagLock|stateFlagStateIn|stateFlagStateOut)
 			},
 			args: []string{
 				"-lock=false",
@@ -249,8 +272,8 @@ func TestStateFlagsRegistering(t *testing.T) {
 			}),
 		},
 		"lock, state in, state out and backup": {
-			register: func(s *State, f *flag.FlagSet) {
-				s.addFlags(f, stateFlagAll)
+			register: func(cli *CommandLine) *State {
+				return BindState(cli, stateFlagAll)
 			},
 			args: []string{
 				"-lock=false",
@@ -268,10 +291,15 @@ func TestStateFlagsRegistering(t *testing.T) {
 			}),
 		},
 		"lock, state in, state out and backup with a different default": {
-			register: func(s *State, f *flag.FlagSet) {
-				// StateFlagBackup omitted here to be added later with a different default value
-				s.addFlags(f, stateFlagLock|stateFlagStateIn|stateFlagStateOut)
-				s.AddBackupFlag(f, "-")
+			register: func(cli *CommandLine) *State {
+				s := BindState(cli, stateFlagLock|stateFlagStateIn|stateFlagStateOut|stateFlagBackup)
+				cli.PreHook(func() tfdiags.Diagnostics {
+					if s.BackupPath == "" {
+						s.BackupPath = "-"
+					}
+					return nil
+				})
+				return s
 			},
 			args: []string{
 				"-lock=false",
@@ -289,18 +317,15 @@ func TestStateFlagsRegistering(t *testing.T) {
 			}),
 		},
 	}
-	cmpOpts := cmpopts.IgnoreUnexported()
-
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
-			s := &State{}
-			f := defaultFlagSet("test")
-			tc.register(s, f)
-			err := f.Parse(tc.args)
-			if diff := cmp.Diff(fmt.Sprintf("%s", tc.wantErr), fmt.Sprintf("%s", err)); diff != "" {
-				t.Errorf("unexpected error (-want,+got)\n%s", diff)
+			var cli CommandLine
+			s := tc.register(&cli)
+			_, diags := cli.parseWithHooks("test", tc.args)
+			if want, got := fmt.Sprintf("%s", tc.wantErr), fmt.Sprintf("%s", diags.Err()); !strings.Contains(got, want) {
+				t.Errorf("wanted error: %q, got error %q", want, got)
 			}
-			if diff := cmp.Diff(tc.want, s, cmpOpts); diff != "" {
+			if diff := cmp.Diff(tc.want, s); diff != "" {
 				t.Errorf("unexpected result (-want,+got)\n%s", diff)
 			}
 		})

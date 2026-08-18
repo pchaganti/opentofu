@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/opentofu/opentofu/internal/command/flags"
 )
 
@@ -82,14 +81,14 @@ func TestParseInit_basicValidation(t *testing.T) {
 		"one plugin dir configured": {
 			[]string{"-plugin-dir=/test1"},
 			initArgsWithDefaults(func(init *Init) {
-				_ = init.FlagPluginPath.Set("/test1")
+				init.FlagPluginPath = append(init.FlagPluginPath, "/test1")
 			}),
 		},
 		"multiple plugin dirs configured": {
 			[]string{"-plugin-dir=/test1", "-plugin-dir=/test2"},
 			initArgsWithDefaults(func(init *Init) {
-				_ = init.FlagPluginPath.Set("/test1")
-				_ = init.FlagPluginPath.Set("/test2")
+				init.FlagPluginPath = append(init.FlagPluginPath, "/test1")
+				init.FlagPluginPath = append(init.FlagPluginPath, "/test2")
 			}),
 		},
 		"lock disabled": {
@@ -106,8 +105,6 @@ func TestParseInit_basicValidation(t *testing.T) {
 		},
 	}
 
-	cmpOpts := cmpopts.IgnoreUnexported(Vars{}, ViewOptions{})
-
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			got, closer, diags := ParseInit(tc.args)
@@ -116,7 +113,7 @@ func TestParseInit_basicValidation(t *testing.T) {
 			if len(diags) > 0 {
 				t.Fatalf("unexpected diags: %v", diags)
 			}
-			if diff := cmp.Diff(tc.want, got, cmpOpts); diff != "" {
+			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("unexpected result\n%s", diff)
 			}
 		})
@@ -423,15 +420,16 @@ func initArgsWithDefaults(mutate func(init *Init)) *Init {
 		TestsDirectory:  "tests",
 		FlagGet:         true,
 		FlagUpgrade:     false,
-		FlagPluginPath:  nil,
+		FlagPluginPath:  []string{},
 		FlagConfigExtra: flags.NewRawFlags("-backend-config"),
 		FlagBackend:     true,
 		FlagCloud:       true,
 		BackendFlagSet:  false,
 		CloudFlagSet:    false,
-		ViewOptions: ViewOptions{
-			ViewType:     ViewHuman,
-			InputEnabled: true,
+		View: &View{
+			ConsolidateWarnings: true,
+			ViewType:            ViewHuman,
+			InputEnabled:        true,
 		},
 		Vars:    &Vars{},
 		State:   &State{Lock: true},

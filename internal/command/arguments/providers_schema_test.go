@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 func TestParseProvidersSchema_basicValidation(t *testing.T) {
@@ -25,7 +24,7 @@ func TestParseProvidersSchema_basicValidation(t *testing.T) {
 			want: providersSchemaArgsWithDefaults(func(ps *ProvidersSchema) {
 				// even though the -json flag is given, that is only to force the user to handle the successfull output
 				// of this command as json
-				ps.ViewOptions.ViewType = ViewHuman
+				ps.View.ViewType = ViewHuman
 			}),
 		},
 		"missing json flag": {
@@ -33,7 +32,6 @@ func TestParseProvidersSchema_basicValidation(t *testing.T) {
 			wantDiags: true,
 			want:      providersSchemaArgsWithDefaults(nil),
 			wantContain: []string{
-				"Output only in json is allowed",
 				"The `tofu providers schema` command requires the `-json` flag.",
 			},
 		},
@@ -42,12 +40,11 @@ func TestParseProvidersSchema_basicValidation(t *testing.T) {
 			want: providersSchemaArgsWithDefaults(func(ps *ProvidersSchema) {
 				// even though the -json flag is given, that is only to force the user to handle the successfull output
 				// of this command as json
-				ps.ViewOptions.ViewType = ViewHuman
+				ps.View.ViewType = ViewHuman
 			}),
 			wantDiags: true,
 			wantContain: []string{
-				"Too many command line arguments",
-				"Expected at most zero positional arguments.",
+				"Too many command line arguments. Did you mean to use -chdir",
 			},
 		},
 		"multiple positional arguments with json": {
@@ -55,18 +52,13 @@ func TestParseProvidersSchema_basicValidation(t *testing.T) {
 			want: providersSchemaArgsWithDefaults(func(ps *ProvidersSchema) {
 				// even though the -json flag is given, that is only to force the user to handle the successfull output
 				// of this command as json
-				ps.ViewOptions.ViewType = ViewHuman
+				ps.View.ViewType = ViewHuman
 			}),
 			wantDiags: true,
 			wantContain: []string{
-				"Too many command line arguments",
-				"Expected at most zero positional arguments.",
+				"Too many command line arguments. Did you mean to use -chdir",
 			},
 		},
-	}
-
-	cmpOpts := cmp.Options{
-		cmpopts.IgnoreUnexported(Vars{}, ViewOptions{}),
 	}
 
 	for name, tc := range testCases {
@@ -74,7 +66,7 @@ func TestParseProvidersSchema_basicValidation(t *testing.T) {
 			got, closer, diags := ParseProvidersSchema(tc.args)
 			defer closer()
 
-			if diff := cmp.Diff(tc.want, got, cmpOpts); diff != "" {
+			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("unexpected result\n%s", diff)
 			}
 
@@ -99,9 +91,10 @@ func TestParseProvidersSchema_basicValidation(t *testing.T) {
 
 func providersSchemaArgsWithDefaults(mutate func(ps *ProvidersSchema)) *ProvidersSchema {
 	ret := &ProvidersSchema{
-		ViewOptions: ViewOptions{
-			ViewType:     ViewHuman,
-			InputEnabled: false,
+		View: &View{
+			ConsolidateWarnings: true,
+			ViewType:            ViewHuman,
+			InputEnabled:        false,
 		},
 		Vars: &Vars{},
 	}

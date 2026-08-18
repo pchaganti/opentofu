@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 func TestParseProviders_basicValidation(t *testing.T) {
@@ -32,12 +31,12 @@ func TestParseProviders_basicValidation(t *testing.T) {
 		"unknown flag": {
 			args:        []string{"-json"},
 			want:        providersArgsWithDefaults(func(v *Providers) {}),
-			wantErrText: "Failed to parse command-line flags: flag provided but not defined: -json",
+			wantErrText: "flag provided but not defined: -json",
 		},
 		"unknown flag2": {
 			args:        []string{"-json-into"},
 			want:        providersArgsWithDefaults(func(v *Providers) {}),
-			wantErrText: "Failed to parse command-line flags: flag provided but not defined: -json-into",
+			wantErrText: "flag provided but not defined: -json-into",
 		},
 		"too many args": {
 			args:        []string{"foo"},
@@ -45,8 +44,6 @@ func TestParseProviders_basicValidation(t *testing.T) {
 			wantErrText: "Too many command line arguments. Did you mean to use -chdir?",
 		},
 	}
-
-	cmpOpts := cmpopts.IgnoreUnexported(Vars{}, ViewOptions{})
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
@@ -63,7 +60,7 @@ func TestParseProviders_basicValidation(t *testing.T) {
 					t.Errorf("the returned diagnostics does not contain the expected error message.\ndiags:\n%s\nwanted: %s\n", errStr, tc.wantErrText)
 				}
 			}
-			if diff := cmp.Diff(tc.want, got, cmpOpts); diff != "" {
+			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("unexpected result\n%s", diff)
 			}
 		})
@@ -119,9 +116,10 @@ func TestParseProviders_vars(t *testing.T) {
 func providersArgsWithDefaults(mutate func(v *Providers)) *Providers {
 	ret := &Providers{
 		TestsDirectory: "tests",
-		ViewOptions: ViewOptions{
-			ViewType:     ViewHuman,
-			InputEnabled: false,
+		View: &View{
+			ConsolidateWarnings: true,
+			ViewType:            ViewHuman,
+			InputEnabled:        false,
 		},
 		Vars: &Vars{},
 	}

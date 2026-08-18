@@ -11,7 +11,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/opentofu/opentofu/internal/addrs"
 )
 
@@ -25,13 +24,19 @@ func TestParseTaint_basicValidation(t *testing.T) {
 		"no arguments": {
 			args:        nil,
 			want:        taintArgsWithDefaults(nil),
-			wantErrText: "The taint command expects exactly one argument.",
+			wantErrText: "Expected exactly one positional argument",
 			forTaintCmd: true,
 		},
 		"too many arguments": {
-			args:        []string{"test_instance.foo", "test_instance.bar"},
-			want:        taintArgsWithDefaults(nil),
-			wantErrText: "The taint command expects exactly one argument.",
+			args: []string{"test_instance.foo", "test_instance.bar"},
+			want: taintArgsWithDefaults(func(v *Taint) {
+				v.TargetAddress = addrs.Resource{
+					Mode: addrs.ManagedResourceMode,
+					Type: "test_instance",
+					Name: "foo",
+				}.Instance(addrs.NoKey).Absolute(addrs.RootModuleInstance)
+			}),
+			wantErrText: "Expected exactly one positional argument",
 			forTaintCmd: true,
 		},
 		"valid resource address": {
@@ -98,12 +103,10 @@ func TestParseTaint_basicValidation(t *testing.T) {
 		},
 		"unknown flag": {
 			args:        []string{"-unknown-flag", "test_instance.foo"},
-			want:        taintArgsWithDefaults(func(v *Taint) {}),
-			wantErrText: "Failed to parse command-line flags: flag provided but not defined: -unknown-flag",
+			want:        taintArgsWithDefaults(nil),
+			wantErrText: "flag provided but not defined: -unknown-flag",
 		},
 	}
-
-	cmpOpts := cmpopts.IgnoreUnexported(Vars{}, ViewOptions{}, State{}, Backend{})
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
@@ -120,7 +123,7 @@ func TestParseTaint_basicValidation(t *testing.T) {
 					t.Errorf("the returned diagnostics does not contain the expected error message.\ndiags:\n%s\nwanted: %s\n", errStr, tc.wantErrText)
 				}
 			}
-			if diff := cmp.Diff(tc.want, got, cmpOpts); diff != "" {
+			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("unexpected result\n%s", diff)
 			}
 		})
@@ -180,9 +183,10 @@ func taintArgsWithDefaults(mutate func(v *Taint)) *Taint {
 	ret := &Taint{
 		TargetAddress: addrs.AbsResourceInstance{},
 		AllowMissing:  false,
-		ViewOptions: ViewOptions{
-			ViewType:     ViewHuman,
-			InputEnabled: false,
+		View: &View{
+			ConsolidateWarnings: true,
+			ViewType:            ViewHuman,
+			InputEnabled:        false,
 		},
 		Vars: &Vars{},
 		State: &State{

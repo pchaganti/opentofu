@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 func TestParseStatePush_basicValidation(t *testing.T) {
@@ -22,12 +21,14 @@ func TestParseStatePush_basicValidation(t *testing.T) {
 		"no arguments": {
 			args:        nil,
 			want:        statePushArgsWithDefaults(nil),
-			wantErrText: "Exactly one argument expected",
+			wantErrText: "Expected exactly one positional argument",
 		},
 		"too many arguments": {
-			args:        []string{"state1.tfstate", "state2.tfstate"},
-			want:        statePushArgsWithDefaults(nil),
-			wantErrText: "Exactly one argument expected",
+			args: []string{"state1.tfstate", "state2.tfstate"},
+			want: statePushArgsWithDefaults(func(v *StatePush) {
+				v.StateSrc = "state1.tfstate"
+			}),
+			wantErrText: "Expected exactly one positional argument",
 		},
 		"valid state file path": {
 			args: []string{"terraform.tfstate"},
@@ -79,15 +80,11 @@ func TestParseStatePush_basicValidation(t *testing.T) {
 			}),
 		},
 		"unknown flag": {
-			args: []string{"-unknown-flag", "terraform.tfstate"},
-			want: statePushArgsWithDefaults(func(v *StatePush) {
-				v.StateSrc = "terraform.tfstate"
-			}),
-			wantErrText: "Failed to parse command-line flags: flag provided but not defined: -unknown-flag",
+			args:        []string{"-unknown-flag", "terraform.tfstate"},
+			want:        statePushArgsWithDefaults(nil),
+			wantErrText: "flag provided but not defined: -unknown-flag",
 		},
 	}
-
-	cmpOpts := cmpopts.IgnoreUnexported(Vars{}, ViewOptions{}, Backend{})
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
@@ -104,7 +101,7 @@ func TestParseStatePush_basicValidation(t *testing.T) {
 					t.Errorf("the returned diagnostics does not contain the expected error message.\ndiags:\n%s\nwanted: %s\n", errStr, tc.wantErrText)
 				}
 			}
-			if diff := cmp.Diff(tc.want, got, cmpOpts); diff != "" {
+			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("unexpected result\n%s", diff)
 			}
 		})
@@ -161,9 +158,10 @@ func statePushArgsWithDefaults(mutate func(v *StatePush)) *StatePush {
 	ret := &StatePush{
 		StateSrc: "",
 		Force:    false,
-		ViewOptions: ViewOptions{
-			ViewType:     ViewHuman,
-			InputEnabled: false,
+		View: &View{
+			ConsolidateWarnings: true,
+			ViewType:            ViewHuman,
+			InputEnabled:        false,
 		},
 		Vars: &Vars{},
 		Backend: &Backend{

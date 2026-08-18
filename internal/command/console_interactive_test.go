@@ -97,14 +97,12 @@ func TestConsole_multiline_interactive(t *testing.T) {
 
 			streams, done := terminal.StreamsForTesting(t)
 			view := views.NewView(streams)
-			c := &ConsoleCommand{
-				Meta: Meta{
-					WorkingDir:       workdir.NewDir("."),
-					testingOverrides: metaOverridesForProvider(p),
-					View:             view,
-				},
+			meta := Meta{
+				WorkingDir:       workdir.NewDir("."),
+				testingOverrides: metaOverridesForProvider(p),
+				View:             view,
 			}
-			code := c.Run(nil)
+			code := RunCommander(t, ConsoleCommander(), meta, nil)
 			streamsOut := done(t)
 			if code != 0 {
 				t.Fatalf("bad: %d\n\n%s", code, streamsOut.Stderr())
@@ -113,11 +111,6 @@ func TestConsole_multiline_interactive(t *testing.T) {
 			got := streamsOut.Stdout()
 			if diff := cmp.Diff(got, tc.expected); diff != "" {
 				t.Fatalf("unexpected output. For input: %s\n%s", tc.input, diff)
-			}
-
-			// TODO meta-refactor: remove this assertion once the stateArgs from Meta is removed
-			if !c.Meta.stateArgs.Lock {
-				t.Errorf("stateLock should always be false for this command")
 			}
 		})
 	}

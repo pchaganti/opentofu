@@ -18,46 +18,31 @@ type Unlock struct {
 
 	// Vars holds and provides information for the flags related to variables that a user can give into the process
 	Vars *Vars
-	// ViewOptions specifies which view options to use
-	ViewOptions ViewOptions
+	// View represents the global view options
+	View *View
+}
+
+// BindUnlock registers CLI arguments, returning a Unlock value and it's corresponding hooks.
+func BindUnlock(cli *CommandLine) *Unlock {
+	arguments := Unlock{
+		View: BindView(cli, viewFlagNoInput),
+		Vars: BindVars(cli),
+	}
+
+	cli.BoolVar(&arguments.Force, "force", false, "Don't ask for input for unlock confirmation.")
+
+	cli.ArgHelp = "Expected a single argument: LOCK_ID"
+	cli.PositionalArg(&arguments.LockID, "LOCK_ID", false)
+
+	return &arguments
 }
 
 // ParseUnlock processes CLI arguments, returning a Unlock value, a closer function, and errors.
 // If errors are encountered, a Unlock value is still returned representing
 // the best effort interpretation of the arguments.
 func ParseUnlock(args []string) (*Unlock, func(), tfdiags.Diagnostics) {
-	var diags tfdiags.Diagnostics
-	arguments := &Unlock{
-		Vars: &Vars{},
-	}
-
-	cmdFlags := extendedFlagSet("force-unlock", nil, arguments.Vars)
-	cmdFlags.BoolVar(&arguments.Force, "force", false, "force")
-	arguments.ViewOptions.AddFlags(cmdFlags, false)
-
-	if err := cmdFlags.Parse(args); err != nil {
-		diags = diags.Append(tfdiags.Sourceless(
-			tfdiags.Error,
-			"Failed to parse command-line flags",
-			err.Error(),
-		))
-	}
-
-	closer, moreDiags := arguments.ViewOptions.Parse()
-	diags = diags.Append(moreDiags)
-	if diags.HasErrors() {
-		return arguments, closer, diags
-	}
-	args = cmdFlags.Args()
-	if len(args) != 1 {
-		diags = diags.Append(tfdiags.Sourceless(
-			tfdiags.Error,
-			"Wrong number of arguments",
-			"Expected a single argument: LOCK_ID",
-		))
-	} else {
-		arguments.LockID = args[0]
-	}
-
+	cli := new(CommandLine)
+	arguments := BindUnlock(cli)
+	closer, diags := cli.parseWithHooks("force-unlock", args)
 	return arguments, closer, diags
 }

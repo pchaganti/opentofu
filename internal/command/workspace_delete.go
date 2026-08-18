@@ -11,7 +11,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/mitchellh/cli"
 	"github.com/posener/complete"
 
 	"github.com/opentofu/opentofu/internal/command/arguments"
@@ -21,36 +20,34 @@ import (
 	"github.com/opentofu/opentofu/internal/tfdiags"
 )
 
+func WorkspaceDeleteCommander(legacyName bool) Command {
+	cmd := Command{
+		Name:  "delete",
+		Short: "Delete a workspace",
+		Long:  `Delete a OpenTofu workspace`,
+
+		DiagsWithNewline: true,
+	}
+
+	args := arguments.BindWorkspaceDelete(&cmd.CommandLine)
+	cmd.Run = func(meta Meta) int {
+		return WorkspaceDeleteCommand{meta, legacyName}.Execute(args, views.NewWorkspace(args.View, meta.View))
+	}
+
+	return cmd
+}
+
 type WorkspaceDeleteCommand struct {
 	Meta
 	LegacyName bool
 }
 
 func (c *WorkspaceDeleteCommand) Run(rawArgs []string) int {
+	return RunCommand(WorkspaceDeleteCommander(c.LegacyName), c.Meta, rawArgs)
+}
+func (c WorkspaceDeleteCommand) Execute(args *arguments.WorkspaceDelete, view views.Workspace) int {
+	var diags tfdiags.Diagnostics
 	ctx := c.CommandContext()
-
-	common, rawArgs := arguments.ParseView(rawArgs)
-	c.View.Configure(common)
-	// Because the legacy UI was using println to show diagnostics and the new view is using, by default, print,
-	// in order to keep functional parity, we setup the view to add a new line after each diagnostic.
-	c.View.DiagsWithNewline()
-
-	// Parse and validate flags
-	args, closer, diags := arguments.ParseWorkspaceDelete(rawArgs)
-	defer closer()
-
-	// Instantiate the view, even if there are flag errors, so that we render
-	// diagnostics according to the desired view
-	view := views.NewWorkspace(args.ViewOptions, c.View)
-	if diags.HasErrors() {
-		view.Diagnostics(diags)
-		if args.ViewOptions.ViewType == arguments.ViewJSON {
-			return 1 // in case it's json, do not print the help of the command
-		}
-		return cli.RunResultHelp
-	}
-	c.Meta.variableArgs = args.Vars.All()
-	c.Meta.stateArgs = *args.State
 
 	view.WarnWhenUsedAsEnvCmd(c.LegacyName)
 

@@ -32,13 +32,12 @@ func TestParseStatePull_basicValidation(t *testing.T) {
 		"unknown flag": {
 			args:        []string{"-unknown"},
 			want:        statePullArgsWithDefaults(nil),
-			wantErrText: "Failed to parse command-line flags",
+			wantErrText: "Failed to parse command-line options",
 		},
 	}
 
 	cmpOpts := cmp.Options{
-		cmpopts.IgnoreUnexported(Vars{}, ViewOptions{}),
-		cmpopts.IgnoreFields(ViewOptions{}, "JSONInto"), // We ignore JSONInto because it contains a file which is not really diffable
+		cmpopts.IgnoreFields(View{}, "JSONInto"), // We ignore JSONInto because it contains a file which is not really diffable
 	}
 
 	for name, tc := range testCases {
@@ -111,9 +110,10 @@ func TestParseStatePull_vars(t *testing.T) {
 
 func statePullArgsWithDefaults(mutate func(args *StatePull)) *StatePull {
 	ret := &StatePull{
-		ViewOptions: ViewOptions{
-			ViewType:     ViewHuman,
-			InputEnabled: false,
+		View: &View{
+			ConsolidateWarnings: true,
+			ViewType:            ViewHuman,
+			InputEnabled:        false,
 		},
 		Vars: &Vars{},
 	}

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/mitchellh/cli"
 	"github.com/opentofu/opentofu/internal/addrs"
 	"github.com/opentofu/opentofu/internal/backend"
 	"github.com/opentofu/opentofu/internal/command/arguments"
@@ -21,48 +20,51 @@ import (
 	"github.com/opentofu/opentofu/internal/tofu"
 )
 
+func StateMvCommander() Command {
+	cmd := Command{
+		Name:    "mv",
+		Aliases: []string{"move"},
+		Short:   "Move an item in the state",
+		Long: `This command will move an item matched by the address given to the destination address. This command can also move to a destination address in a completely different state file.
+
+This can be used for simple resource renaming, moving items to and from a module, moving entire modules, and more. And because this command can also move data to a completely new state, it can also be used for refactoring one configuration into multiple separately managed OpenTofu configurations.
+
+This command will output a backup copy of the state prior to saving any changes. The backup cannot be disabled. Due to the destructive nature of this command, backups are required.
+
+If you're moving an item to a different state file, a backup will be created for each state file.`,
+
+		DiagsWithNewline: true,
+	}
+
+	args := arguments.BindStateMv(&cmd.CommandLine)
+	cmd.Run = func(meta Meta) int {
+		return StateMvCommand{StateMeta{meta}}.Execute(args, views.NewState(args.View, meta.View))
+	}
+
+	return cmd
+}
+
 // StateMvCommand is a Command implementation that shows a single resource.
 type StateMvCommand struct {
 	StateMeta
 }
 
 func (c *StateMvCommand) Run(rawArgs []string) int {
+	return RunCommand(StateMvCommander(), c.Meta, rawArgs)
+}
+func (c StateMvCommand) Execute(args *arguments.StateMv, view views.State) int {
+	var diags tfdiags.Diagnostics
+
 	ctx := c.CommandContext()
 
-	common, rawArgs := arguments.ParseView(rawArgs)
-	c.View.Configure(common)
-	// Because the legacy UI was using println to show diagnostics and the new view is using, by default, print,
-	// in order to keep functional parity, we setup the view to add a new line after each diagnostic.
-	c.View.DiagsWithNewline()
-
-	// Parse and validate flags
-	args, closer, diags := arguments.ParseStateMv(rawArgs)
-	defer closer()
-
-	// Instantiate the view, even if there are flag errors, so that we render
-	// diagnostics according to the desired view
-	view := views.NewState(args.ViewOptions, c.View)
-	if diags.HasErrors() {
-		view.Diagnostics(diags)
-		if args.ViewOptions.ViewType == arguments.ViewJSON {
-			return 1 // in case it's json, do not print the help of the command
-		}
-		return cli.RunResultHelp
-	}
 	c.backendArgs = *args.Backend
 
-	c.Meta.variableArgs = args.Vars.All()
 	// NOTE: We intentionally configure the stateArgs here like this, ignoring the stateOutPath, because the c.stateArgs
 	// are used for loading the state which stores internally the output path which in the context of this command
 	// will have unwanted side effects, ending in writing the source state in the target state.
 	// TODO meta-refactor: when we move the backend logic to its own component, maybe there is a way to change the
 	//  arguments.State in such way to be reused with/without the stateOut.
-	c.Meta.stateArgs = arguments.State{
-		Lock:        args.State.Lock,
-		LockTimeout: args.State.LockTimeout,
-		StatePath:   args.State.StatePath,
-		BackupPath:  args.State.BackupPath,
-	}
+	c.Meta.stateArgs.StateOutPath = ""
 
 	if diags := c.Meta.checkRequiredVersion(ctx); diags != nil {
 		view.Diagnostics(diags)

@@ -11,8 +11,6 @@ import (
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/opentofu/opentofu/internal/command/flags"
 
 	"github.com/opentofu/opentofu/internal/tfdiags"
 )
@@ -20,21 +18,21 @@ import (
 func TestParseTest_Vars(t *testing.T) {
 	tcs := map[string]struct {
 		args []string
-		want []flags.RawFlag
+		want Vars
 	}{
 		"no var flags by default": {
 			args: nil,
-			want: nil,
+			want: Vars{},
 		},
 		"one var": {
 			args: []string{"-var", "foo=bar"},
-			want: []flags.RawFlag{
+			want: Vars{
 				{Name: "-var", Value: "foo=bar"},
 			},
 		},
 		"one var-file": {
 			args: []string{"-var-file", "cool.tfvars"},
-			want: []flags.RawFlag{
+			want: Vars{
 				{Name: "-var-file", Value: "cool.tfvars"},
 			},
 		},
@@ -44,7 +42,7 @@ func TestParseTest_Vars(t *testing.T) {
 				"-var-file", "cool.tfvars",
 				"-var", "boop=beep",
 			},
-			want: []flags.RawFlag{
+			want: Vars{
 				{Name: "-var", Value: "foo=bar"},
 				{Name: "-var-file", Value: "cool.tfvars"},
 				{Name: "-var", Value: "boop=beep"},
@@ -77,9 +75,9 @@ func TestParseTest(t *testing.T) {
 		"defaults": {
 			args: nil,
 			want: &Test{
-				Filter:        nil,
+				Filter:        []string{},
 				TestDirectory: "tests",
-				ViewOptions:   ViewOptions{ViewType: ViewHuman},
+				View:          &View{ConsolidateWarnings: true, ViewType: ViewHuman},
 				Vars:          &Vars{},
 			},
 			wantDiags: nil,
@@ -89,7 +87,7 @@ func TestParseTest(t *testing.T) {
 			want: &Test{
 				Filter:        []string{"one.tftest.hcl", "two.tftest.hcl"},
 				TestDirectory: "tests",
-				ViewOptions:   ViewOptions{ViewType: ViewHuman},
+				View:          &View{ConsolidateWarnings: true, ViewType: ViewHuman},
 				Vars:          &Vars{},
 			},
 			wantDiags: nil,
@@ -97,9 +95,9 @@ func TestParseTest(t *testing.T) {
 		"json": {
 			args: []string{"-json"},
 			want: &Test{
-				Filter:        nil,
+				Filter:        []string{},
 				TestDirectory: "tests",
-				ViewOptions:   ViewOptions{ViewType: ViewJSON},
+				View:          &View{ConsolidateWarnings: true, ViewType: ViewJSON},
 				Vars:          &Vars{},
 			},
 			wantDiags: nil,
@@ -107,9 +105,9 @@ func TestParseTest(t *testing.T) {
 		"test-directory": {
 			args: []string{"-test-directory=other"},
 			want: &Test{
-				Filter:        nil,
+				Filter:        []string{},
 				TestDirectory: "other",
-				ViewOptions:   ViewOptions{ViewType: ViewHuman},
+				View:          &View{ConsolidateWarnings: true, ViewType: ViewHuman},
 				Vars:          &Vars{},
 			},
 			wantDiags: nil,
@@ -117,9 +115,9 @@ func TestParseTest(t *testing.T) {
 		"verbose": {
 			args: []string{"-verbose"},
 			want: &Test{
-				Filter:        nil,
+				Filter:        []string{},
 				TestDirectory: "tests",
-				ViewOptions:   ViewOptions{ViewType: ViewHuman},
+				View:          &View{ConsolidateWarnings: true, ViewType: ViewHuman},
 				Verbose:       true,
 				Vars:          &Vars{},
 			},
@@ -127,28 +125,26 @@ func TestParseTest(t *testing.T) {
 		"unknown flag": {
 			args: []string{"-boop"},
 			want: &Test{
-				Filter:        nil,
+				Filter:        []string{},
 				TestDirectory: "tests",
-				ViewOptions:   ViewOptions{ViewType: ViewHuman},
+				View:          &View{ConsolidateWarnings: true, ViewType: ViewHuman},
 				Vars:          &Vars{},
 			},
 			wantDiags: tfdiags.Diagnostics{
 				tfdiags.Sourceless(
 					tfdiags.Error,
-					"Failed to parse command-line flags",
+					"Failed to parse command-line options",
 					"flag provided but not defined: -boop",
 				),
 			},
 		},
 	}
 
-	cmpOpts := cmpopts.IgnoreUnexported(Operation{}, Vars{}, State{}, ViewOptions{})
-
 	for name, tc := range tcs {
 		t.Run(name, func(t *testing.T) {
 			got, _, diags := ParseTest(tc.args)
 
-			if diff := cmp.Diff(tc.want, got, cmpOpts); len(diff) > 0 {
+			if diff := cmp.Diff(tc.want, got); len(diff) > 0 {
 				t.Errorf("diff:\n%s", diff)
 			}
 

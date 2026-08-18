@@ -18,6 +18,25 @@ import (
 	"github.com/opentofu/opentofu/internal/tfdiags"
 )
 
+func PlanCommander() Command {
+	cmd := Command{
+		Name:  "plan",
+		Short: "Show changes required by the current configuration",
+		Long: `Generates a speculative execution plan, showing what actions OpenTofu would take to apply the current configuration. This command will not actually perform the planned actions.
+
+You can optionally save the plan to a file, which you can then pass to the "apply" command to perform exactly the actions described in the plan.`,
+
+		GroupID: MainCommandGroup.ID,
+	}
+
+	args := arguments.BindPlan(&cmd.CommandLine)
+	cmd.Run = func(meta Meta) int {
+		return PlanCommand{meta}.Execute(args, views.NewPlan(args.View, meta.View))
+	}
+
+	return cmd
+}
+
 // PlanCommand is a Command implementation that compares a OpenTofu
 // configuration to an actual infrastructure and shows the differences.
 type PlanCommand struct {
@@ -25,27 +44,11 @@ type PlanCommand struct {
 }
 
 func (c *PlanCommand) Run(rawArgs []string) int {
+	return RunCommand(PlanCommander(), c.Meta, rawArgs)
+}
+func (c PlanCommand) Execute(args *arguments.Plan, view views.Plan) int {
+	var diags tfdiags.Diagnostics
 	ctx := c.CommandContext()
-
-	// Parse and apply global view arguments
-	common, rawArgs := arguments.ParseView(rawArgs)
-	c.View.Configure(common)
-
-	// Parse and validate flags
-	args, closer, diags := arguments.ParsePlan(rawArgs)
-	defer closer()
-
-	c.View.SetShowSensitive(args.ShowSensitive)
-
-	// Instantiate the view, even if there are flag errors, so that we render
-	// diagnostics according to the desired view
-	view := views.NewPlan(args.ViewOptions, c.View)
-
-	if diags.HasErrors() {
-		view.Diagnostics(diags)
-		view.HelpPrompt()
-		return 1
-	}
 
 	// Check for user-supplied plugin path
 	var err error
@@ -55,23 +58,7 @@ func (c *PlanCommand) Run(rawArgs []string) int {
 		return 1
 	}
 
-	// FIXME: the -input flag value is needed to initialize the backend and the
-	// operation, but there is no clear path to pass this value down, so we
-	// continue to mutate the Meta object state for now.
-	c.Meta.input = args.ViewOptions.InputEnabled
-
-	// FIXME: the -parallelism flag is used to control the concurrency of
-	// OpenTofu operations. At the moment, this value is used both to
-	// initialize the backend via the ContextOpts field inside CLIOpts, and to
-	// set a largely unused field on the Operation request. Again, there is no
-	// clear path to pass this value down, so we continue to mutate the Meta
-	// object state for now.
-	c.Meta.parallelism = args.Operation.Parallelism
-
 	diags = diags.Append(c.providerDevOverrideRuntimeWarnings())
-
-	// Inject variables from args into meta for static evaluation
-	c.Meta.variableArgs = args.Vars.All()
 
 	// Load the encryption configuration
 	enc, encDiags := c.Encryption(ctx)
@@ -90,7 +77,7 @@ func (c *PlanCommand) Run(rawArgs []string) int {
 	}
 
 	// Build the operation request
-	opReq, opDiags := c.OperationRequest(ctx, be, view, args.ViewOptions, args.Operation, args.OutPath, args.GenerateConfigPath, enc)
+	opReq, opDiags := c.OperationRequest(ctx, be, view, args.View, args.Operation, args.OutPath, args.GenerateConfigPath, enc)
 	diags = diags.Append(opDiags)
 	if diags.HasErrors() {
 		view.Diagnostics(diags)
@@ -121,8 +108,6 @@ func (c *PlanCommand) Run(rawArgs []string) int {
 }
 
 func (c *PlanCommand) PrepareBackend(ctx context.Context, args *arguments.State, view views.Plan, enc encryption.Encryption) (backend.Enhanced, tfdiags.Diagnostics) {
-	c.Meta.stateArgs = *args
-
 	backendConfig, diags := c.loadBackendConfig(ctx, ".")
 	if diags.HasErrors() {
 		return nil, diags
@@ -145,7 +130,7 @@ func (c *PlanCommand) OperationRequest(
 	ctx context.Context,
 	be backend.Enhanced,
 	view views.Plan,
-	viewOptions arguments.ViewOptions,
+	viewOptions *arguments.View,
 	args *arguments.Operation,
 	planOutPath string,
 	generateConfigOut string,

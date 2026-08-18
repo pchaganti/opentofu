@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 func TestParseProvidersMirror_basicValidation(t *testing.T) {
@@ -22,12 +21,14 @@ func TestParseProvidersMirror_basicValidation(t *testing.T) {
 		"no directory": {
 			args:        nil,
 			want:        providersMirrorArgsWithDefaults(nil),
-			wantErrText: "Wrong number of arguments: The providers mirror command requires an output directory as a command-line argument.",
+			wantErrText: "The providers mirror command requires an output directory as a command-line argument.",
 		},
 		"too many arguments": {
-			args:        []string{"/path/to/mirror", "/another/path"},
-			want:        providersMirrorArgsWithDefaults(func(v *ProvidersMirror) {}),
-			wantErrText: "Wrong number of arguments: The providers mirror command requires an output directory as a command-line argument.",
+			args: []string{"/path/to/mirror", "/another/path"},
+			want: providersMirrorArgsWithDefaults(func(v *ProvidersMirror) {
+				v.Directory = "/path/to/mirror"
+			}),
+			wantErrText: "The providers mirror command requires an output directory as a command-line argument.",
 		},
 		"single directory": {
 			args: []string{"/path/to/mirror"},
@@ -50,15 +51,11 @@ func TestParseProvidersMirror_basicValidation(t *testing.T) {
 			}),
 		},
 		"unknown flag": {
-			args: []string{"-unknown-flag", "/path/to/mirror"},
-			want: providersMirrorArgsWithDefaults(func(v *ProvidersMirror) {
-				v.Directory = "/path/to/mirror"
-			}),
-			wantErrText: "Failed to parse command-line flags: flag provided but not defined: -unknown-flag",
+			args:        []string{"-unknown-flag", "/path/to/mirror"},
+			want:        providersMirrorArgsWithDefaults(nil),
+			wantErrText: "flag provided but not defined: -unknown-flag",
 		},
 	}
-
-	cmpOpts := cmpopts.IgnoreUnexported(Vars{}, ViewOptions{})
 
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
@@ -75,7 +72,7 @@ func TestParseProvidersMirror_basicValidation(t *testing.T) {
 					t.Errorf("the returned diagnostics does not contain the expected error message.\ndiags:\n\t%s\nwanted:\n\t%s\n", errStr, tc.wantErrText)
 				}
 			}
-			if diff := cmp.Diff(tc.want, got, cmpOpts); diff != "" {
+			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("unexpected result\n%s", diff)
 			}
 		})
@@ -136,10 +133,11 @@ func TestParseProvidersMirror_vars(t *testing.T) {
 func providersMirrorArgsWithDefaults(mutate func(v *ProvidersMirror)) *ProvidersMirror {
 	ret := &ProvidersMirror{
 		Directory:    "",
-		OptPlatforms: nil,
-		ViewOptions: ViewOptions{
-			ViewType:     ViewHuman,
-			InputEnabled: false,
+		OptPlatforms: []string{},
+		View: &View{
+			ConsolidateWarnings: true,
+			ViewType:            ViewHuman,
+			InputEnabled:        false,
 		},
 		Vars: &Vars{},
 	}

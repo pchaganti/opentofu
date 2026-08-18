@@ -11,35 +11,33 @@ import (
 
 // Version represents the command-line arguments for the version command.
 type Version struct {
-	// ViewOptions specifies which view options to use
-	ViewOptions ViewOptions
+	// View represents the global view options
+	View *View
+}
+
+// BindVersion registers CLI arguments, returning a Version value and it's corresponding hooks.
+func BindVersion(cli *CommandLine) *Version {
+	ret := Version{
+		View: BindView(cli, viewFlagJson),
+	}
+
+	// Enable but ignore the global version cli. In main.go, if any of the
+	// arguments are -v, -version, or --version, this command will be called
+	// with the rest of the arguments, so we need to be able to cope with
+	// those.
+	var nop bool
+	cli.BoolVar(&nop, "v", true, "version").SetHidden(true)
+	cli.BoolVar(&nop, "version", true, "version").SetHidden(true)
+
+	return &ret
 }
 
 // ParseVersion processes CLI arguments, returning a Version value, a closer function, and errors.
 // If errors are encountered, a Version value is still returned representing
 // the best effort interpretation of the arguments.
 func ParseVersion(args []string) (*Version, func(), tfdiags.Diagnostics) {
-	var diags tfdiags.Diagnostics
-	ret := &Version{}
-
-	cmdFlags := defaultFlagSet("version")
-	// Enable but ignore the global version flags. In main.go, if any of the
-	// arguments are -v, -version, or --version, this command will be called
-	// with the rest of the arguments, so we need to be able to cope with
-	// those.
-	cmdFlags.Bool("v", true, "version")
-	cmdFlags.Bool("version", true, "version")
-	ret.ViewOptions.AddGranularFlags(cmdFlags, false, false) // Add only the -json flag
-
-	if err := cmdFlags.Parse(args); err != nil {
-		diags = diags.Append(tfdiags.Sourceless(
-			tfdiags.Error,
-			"Failed to parse command-line flags",
-			err.Error(),
-		))
-	}
-
-	closer, moreDiags := ret.ViewOptions.Parse()
-	diags = diags.Append(moreDiags)
+	cli := new(CommandLine)
+	ret := BindVersion(cli)
+	closer, diags := cli.parseWithHooks("version", args)
 	return ret, closer, diags
 }

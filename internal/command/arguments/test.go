@@ -6,8 +6,6 @@
 package arguments
 
 import (
-	"github.com/opentofu/opentofu/internal/command/flags"
-	"github.com/opentofu/opentofu/internal/configs"
 	"github.com/opentofu/opentofu/internal/tfdiags"
 )
 
@@ -23,8 +21,8 @@ type Test struct {
 	// always be discovered.
 	TestDirectory string
 
-	// ViewOptions specifies which view options to use
-	ViewOptions ViewOptions
+	// View represents the global view options
+	View *View
 
 	// You can specify common variables for all tests from the command line.
 	Vars *Vars
@@ -35,29 +33,23 @@ type Test struct {
 	Verbose bool
 }
 
-func ParseTest(args []string) (*Test, func(), tfdiags.Diagnostics) {
-	var diags tfdiags.Diagnostics
-
+// BindTest registers CLI arguments, returning a Test value and it's corresponding hooks.
+func BindTest(cli *CommandLine) *Test {
 	test := Test{
-		Vars: new(Vars),
+		View: BindView(cli, viewFlagNoInput),
+		Vars: BindVars(cli),
 	}
 
-	cmdFlags := extendedFlagSet("test", nil, test.Vars)
-	cmdFlags.Var((*flags.FlagStringSlice)(&test.Filter), "filter", "filter")
-	cmdFlags.StringVar(&test.TestDirectory, "test-directory", configs.DefaultTestDirectory, "test-directory")
-	cmdFlags.BoolVar(&test.Verbose, "verbose", false, "verbose")
+	cli.StringArrayVar(&test.Filter, "filter", nil, "If specified, OpenTofu will only execute the test files specified by this flag. You can use this option multiple times to execute more than one test file. The path should be relative to the current working directory, even if -test-directory is set.").SetDisplay("=testfile")
+	cli.StringVar(&test.TestDirectory, "test-directory", "tests", `Set the OpenTofu test directory, defaults to "tests". When set, the test command will search for test files in the current directory and in the one specified by the flag.`).SetDisplay("=path")
+	cli.BoolVar(&test.Verbose, "verbose", false, "Print the plan or state for each test run block as it executes.")
 
-	test.ViewOptions.AddFlags(cmdFlags, false)
+	return &test
+}
 
-	if err := cmdFlags.Parse(args); err != nil {
-		diags = diags.Append(tfdiags.Sourceless(
-			tfdiags.Error,
-			"Failed to parse command-line flags",
-			err.Error()))
-	}
-
-	closer, moreDiags := test.ViewOptions.Parse()
-	diags = diags.Append(moreDiags)
-
-	return &test, closer, diags
+func ParseTest(args []string) (*Test, func(), tfdiags.Diagnostics) {
+	cli := new(CommandLine)
+	test := BindTest(cli)
+	closer, diags := cli.parseWithHooks("test", args)
+	return test, closer, diags
 }

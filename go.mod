@@ -65,7 +65,7 @@ require (
 	github.com/hashicorp/jsonapi v1.5.0
 	github.com/jmespath/go-jmespath v0.4.0
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0
-	github.com/lib/pq v1.11.2
+	github.com/lib/pq v1.12.3
 	github.com/mattn/go-isatty v0.0.24
 	github.com/mattn/go-shellwords v1.0.14
 	github.com/mitchellh/cli v1.1.5
@@ -88,6 +88,7 @@ require (
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/tag v1.1.0
 	github.com/tencentyun/cos-go-sdk-v5 v0.7.70
 	github.com/ulikunitz/xz v0.5.16
+	github.com/urfave/cli/v3 v3.10.1
 	github.com/xanzy/ssh-agent v0.3.3
 	github.com/xlab/treeprint v1.2.0
 	github.com/zclconf/go-cty v1.19.0

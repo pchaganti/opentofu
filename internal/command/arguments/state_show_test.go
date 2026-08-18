@@ -28,7 +28,7 @@ func TestParseStateShow_basicValidation(t *testing.T) {
 		"show-sensitive enabled": {
 			args: []string{"-show-sensitive", "resource_address"},
 			want: stateShowArgsWithDefaults(func(stateShow *StateShow) {
-				stateShow.ShowSensitive = true
+				stateShow.View.ShowSensitive = true
 				stateShow.TargetRawAddr = "resource_address"
 			}),
 		},
@@ -47,32 +47,33 @@ func TestParseStateShow_basicValidation(t *testing.T) {
 				"resource_address",
 			},
 			want: stateShowArgsWithDefaults(func(stateShow *StateShow) {
-				stateShow.ShowSensitive = true
+				stateShow.View.ShowSensitive = true
 				stateShow.State.StatePath = "/path/to/state.tfstate"
 				stateShow.TargetRawAddr = "resource_address"
-				// Vars would be updated, but we ignore it in cmp
+				stateShow.Vars = &Vars{{Name: "-var", Value: "key=value"}}
 			}),
 		},
 		"no arguments": {
 			args:        []string{},
 			want:        stateShowArgsWithDefaults(nil),
-			wantErrText: "Invalid number of arguments",
+			wantErrText: "Expected exactly one positional argument",
 		},
 		"too many arguments": {
-			args:        []string{"resource_address", "extra"},
-			want:        stateShowArgsWithDefaults(nil),
-			wantErrText: "Invalid number of arguments",
+			args: []string{"resource_address", "extra"},
+			want: stateShowArgsWithDefaults(func(stateShow *StateShow) {
+				stateShow.TargetRawAddr = "resource_address"
+			}),
+			wantErrText: "Expected exactly one positional argument",
 		},
 		"unknown flag": {
-			args:        []string{"-unknown-flag"},
-			want:        stateShowArgsWithDefaults(func(v *StateShow) {}),
-			wantErrText: "Failed to parse command-line flags: flag provided but not defined: -unknown-flag",
+			args:        []string{"-unknown-flag", "resource_address"},
+			want:        stateShowArgsWithDefaults(nil),
+			wantErrText: "flag provided but not defined: -unknown-flag",
 		},
 	}
 
 	cmpOpts := cmp.Options{
-		cmpopts.IgnoreUnexported(Vars{}, ViewOptions{}),
-		cmpopts.IgnoreFields(ViewOptions{}, "JSONInto"), // We ignore JSONInto because it contains a file which is not really diffable
+		cmpopts.IgnoreFields(View{}, "JSONInto"), // We ignore JSONInto because it contains a file which is not really diffable
 	}
 
 	for name, tc := range testCases {
@@ -99,10 +100,11 @@ func TestParseStateShow_basicValidation(t *testing.T) {
 
 func stateShowArgsWithDefaults(mutate func(stateShow *StateShow)) *StateShow {
 	ret := &StateShow{
-		ShowSensitive: false,
-		ViewOptions: ViewOptions{
-			ViewType:     ViewHuman,
-			InputEnabled: false,
+		View: &View{
+			ShowSensitive:       false,
+			ConsolidateWarnings: true,
+			ViewType:            ViewHuman,
+			InputEnabled:        false,
 		},
 		Vars:  &Vars{},
 		State: &State{},

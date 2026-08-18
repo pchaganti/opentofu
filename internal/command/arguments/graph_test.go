@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 func TestParseGraph_basicValidation(t *testing.T) {
@@ -95,8 +94,6 @@ func TestParseGraph_basicValidation(t *testing.T) {
 		},
 	}
 
-	cmpOpts := cmpopts.IgnoreUnexported(Vars{}, ViewOptions{})
-
 	for name, tc := range testCases {
 		t.Run(name, func(t *testing.T) {
 			got, closer, diags := ParseGraph(tc.args)
@@ -105,7 +102,7 @@ func TestParseGraph_basicValidation(t *testing.T) {
 			if len(diags) > 0 {
 				t.Fatalf("unexpected diags: %v", diags)
 			}
-			if diff := cmp.Diff(tc.want, got, cmpOpts); diff != "" {
+			if diff := cmp.Diff(tc.want, got); diff != "" {
 				t.Errorf("unexpected result\n%s", diff)
 			}
 		})
@@ -119,9 +116,10 @@ func graphArgsWithDefaults(mutate func(graph *Graph)) *Graph {
 		ModuleDepth: -1,
 		Verbose:     false,
 		PlanPath:    "",
-		ViewOptions: ViewOptions{
-			ViewType:     ViewHuman,
-			InputEnabled: false,
+		View: &View{
+			ConsolidateWarnings: true,
+			ViewType:            ViewHuman,
+			InputEnabled:        false,
 		},
 		Vars: &Vars{},
 	}

@@ -16,43 +16,28 @@ type Providers struct {
 
 	// Vars holds and provides information for the flags related to variables that a user can give into the process
 	Vars *Vars
-	// ViewOptions specifies which view options to use
-	ViewOptions ViewOptions
+	// View represents the global view options
+	View *View
+}
+
+// BindProviders registers CLI arguments, returning a Providers value and it's corresponding hooks.
+func BindProviders(cli *CommandLine) *Providers {
+	arguments := Providers{
+		View: BindView(cli, viewFlagNone),
+		Vars: BindVars(cli),
+	}
+
+	cli.StringVar(&arguments.TestsDirectory, "test-directory", "tests", `Set the OpenTofu test directory, defaults to "tests". When set, the test command will search for test files in the current directory and in the one specified by the flag.`).SetDisplay("=path")
+
+	return &arguments
 }
 
 // ParseProviders processes CLI arguments, returning a Providers value, a closer function, and errors.
 // If errors are encountered, a Providers value is still returned representing
 // the best effort interpretation of the arguments.
 func ParseProviders(args []string) (*Providers, func(), tfdiags.Diagnostics) {
-	var diags tfdiags.Diagnostics
-	arguments := &Providers{
-		Vars: &Vars{},
-	}
-
-	cmdFlags := extendedFlagSet("providers", nil, arguments.Vars)
-	cmdFlags.StringVar(&arguments.TestsDirectory, "test-directory", "tests", "test-directory")
-
-	if err := cmdFlags.Parse(args); err != nil {
-		diags = diags.Append(tfdiags.Sourceless(
-			tfdiags.Error,
-			"Failed to parse command-line flags",
-			err.Error(),
-		))
-	}
-
-	// we only parse but do not register the views flags since this command does not need it
-	closer, moreDiags := arguments.ViewOptions.Parse()
-	diags = diags.Append(moreDiags)
-	if diags.HasErrors() {
-		return arguments, closer, diags
-	}
-	if len(cmdFlags.Args()) > 0 {
-		diags = diags.Append(tfdiags.Sourceless(
-			tfdiags.Error,
-			"Unexpected argument",
-			"Too many command line arguments. Did you mean to use -chdir?",
-		))
-	}
-
+	cli := new(CommandLine)
+	arguments := BindProviders(cli)
+	closer, diags := cli.parseWithHooks("providers", args)
 	return arguments, closer, diags
 }
