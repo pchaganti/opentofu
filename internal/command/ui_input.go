@@ -41,7 +41,7 @@ type UIInput struct {
 	Reader io.Reader
 	Writer io.Writer
 
-	listening int32
+	listening atomic.Int32
 	result    chan string
 	err       chan string
 
@@ -97,11 +97,11 @@ func (i *UIInput) Input(ctx context.Context, opts *tofu.InputOpts) (string, erro
 	// Build the output format for asking
 	var buf bytes.Buffer
 	buf.WriteString("[reset]")
-	buf.WriteString(fmt.Sprintf("[bold]%s[reset]\n", opts.Query))
+	fmt.Fprintf(&buf, "[bold]%s[reset]\n", opts.Query)
 	if opts.Description != "" {
 		s := bufio.NewScanner(strings.NewReader(opts.Description))
 		for s.Scan() {
-			buf.WriteString(fmt.Sprintf("  %s\n", s.Text()))
+			fmt.Fprintf(&buf, "  %s\n", s.Text())
 		}
 		buf.WriteString("\n")
 	}
@@ -120,10 +120,10 @@ func (i *UIInput) Input(ctx context.Context, opts *tofu.InputOpts) (string, erro
 	// Listen for the input in a goroutine. This will allow us to
 	// interrupt this if we are interrupted (SIGINT).
 	go func() {
-		if !atomic.CompareAndSwapInt32(&i.listening, 0, 1) {
+		if !i.listening.CompareAndSwap(0, 1) {
 			return // We are already listening for input.
 		}
-		defer atomic.CompareAndSwapInt32(&i.listening, 1, 0)
+		defer i.listening.CompareAndSwap(1, 0)
 
 		var line string
 		var err error
