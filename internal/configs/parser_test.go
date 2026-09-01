@@ -11,10 +11,13 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"reflect"
 	"testing"
 
-	"github.com/davecgh/go-spew/spew"
+	"github.com/apparentlymart/go-versions/versions"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/opentofu/opentofu/internal/configs/symlib"
+	"github.com/zclconf/go-cty/cty"
 
 	version "github.com/hashicorp/go-version"
 	"github.com/hashicorp/hcl/v2"
@@ -49,9 +52,9 @@ func testParser(files map[string]string) *Parser {
 func testModuleConfigFromFile(ctx context.Context, filename string) (*Config, hcl.Diagnostics) {
 	parser := NewParser(nil)
 	f, diags := parser.LoadConfigFile(filename)
-	mod, modDiags := NewModule([]*File{f}, nil, RootModuleCallForTesting(), filename, SelectiveLoadAll)
+	mod, modDiags := NewModule([]*File{f}, nil, filename, SelectiveLoadAll)
 	diags = append(diags, modDiags...)
-	cfg, moreDiags := BuildConfig(ctx, mod, nil)
+	cfg, moreDiags := BuildConfig(ctx, mod, RootModuleCallForTesting(), nil)
 	return cfg, append(diags, moreDiags...)
 }
 
@@ -59,15 +62,17 @@ func testModuleConfigFromFile(ctx context.Context, filename string) (*Config, hc
 // a module and returns it. This is a helper for use in unit tests.
 func testModuleFromDir(path string) (*Module, hcl.Diagnostics) {
 	parser := NewParser(nil)
-	return parser.LoadConfigDir(path, RootModuleCallForTesting())
+	mod, diags := parser.LoadConfigDir(path)
+	diags = diags.Extend(mod.Finalize(symlib.EmptyTable, RootModuleCallForTesting()))
+	return mod, diags
 }
 
 // testModuleFromDir reads configuration from the given directory path as a
 // module and returns its configuration. This is a helper for use in unit tests.
 func testModuleConfigFromDir(ctx context.Context, path string) (*Config, hcl.Diagnostics) {
 	parser := NewParser(nil)
-	mod, diags := parser.LoadConfigDir(path, RootModuleCallForTesting())
-	cfg, moreDiags := BuildConfig(ctx, mod, nil)
+	mod, diags := parser.LoadConfigDir(path)
+	cfg, moreDiags := BuildConfig(ctx, mod, RootModuleCallForTesting(), nil)
 	return cfg, append(diags, moreDiags...)
 }
 
@@ -77,7 +82,7 @@ func testNestedModuleConfigFromDirWithTests(t *testing.T, path string) (*Config,
 	t.Helper()
 
 	parser := NewParser(nil)
-	mod, diags := parser.LoadConfigDirWithTests(path, "tests", RootModuleCallForTesting())
+	mod, diags := parser.LoadConfigDirWithTests(path, "tests")
 	if mod == nil {
 		t.Fatal("got nil root module; want non-nil")
 	}
@@ -95,7 +100,7 @@ func testNestedModuleConfigFromDir(t *testing.T, path string) (*Config, hcl.Diag
 	t.Helper()
 
 	parser := NewParser(nil)
-	mod, diags := parser.LoadConfigDir(path, RootModuleCallForTesting())
+	mod, diags := parser.LoadConfigDir(path)
 	if mod == nil {
 		t.Fatal("got nil root module; want non-nil")
 	}
@@ -108,7 +113,7 @@ func testNestedModuleConfigFromDir(t *testing.T, path string) (*Config, hcl.Diag
 
 func buildNestedModuleConfig(ctx context.Context, mod *Module, path string, parser *Parser) (*Config, hcl.Diagnostics) {
 	versionI := 0
-	return BuildConfig(ctx, mod, ModuleWalkerFunc(
+	return BuildConfig(ctx, mod, RootModuleCallForTesting(), ModuleWalkerFunc(
 		func(_ context.Context, req *ModuleRequest) (*Module, *version.Version, hcl.Diagnostics) {
 			// For the sake of this test we're going to just treat our
 			// SourceAddr as a path relative to the calling module.
@@ -124,7 +129,7 @@ func buildNestedModuleConfig(ctx context.Context, mod *Module, path string, pars
 			paths = append([]string{path}, paths...)
 			sourcePath := filepath.Join(paths...)
 
-			mod, diags := parser.LoadConfigDir(sourcePath, RootModuleCallForTesting())
+			mod, diags := parser.LoadConfigDir(sourcePath)
 			version, _ := version.NewVersion(fmt.Sprintf("1.0.%d", versionI))
 			versionI++
 			return mod, version, diags
@@ -197,8 +202,12 @@ func assertExactDiagnostics(t *testing.T, diags hcl.Diagnostics, want []string) 
 
 func assertResultDeepEqual(t *testing.T, got, want interface{}) bool {
 	t.Helper()
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("wrong result\ngot: %swant: %s", spew.Sdump(got), spew.Sdump(want))
+	cmpOpts := cmp.Options{
+		cmpopts.IgnoreUnexported(ProviderConfigRef{}),
+		cmpopts.EquateComparable(cty.Type{}, cty.Value{}, versions.Set{}, hcl.TraverseRoot{}, hcl.TraverseAttr{}),
+	}
+	if diff := cmp.Diff(want, got, cmpOpts...); diff != "" {
+		t.Errorf("wrong result: %s", diff)
 		return true
 	}
 	return false

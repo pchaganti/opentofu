@@ -63,9 +63,6 @@ type FmtCommand struct {
 	input io.Reader // STDIN if nil
 }
 
-func (c *FmtCommand) Run(rawArgs []string) int {
-	return RunCommand(FmtCommander(c.input), c.Meta, rawArgs)
-}
 func (c FmtCommand) Execute(args *arguments.Fmt, view views.Fmt) int {
 	if c.input == nil {
 		c.input = os.Stdin
@@ -123,7 +120,6 @@ func (c *FmtCommand) fmt(paths []string, stdin io.Reader, stdout io.Writer, args
 	}
 
 	for _, path := range paths {
-		path = c.Meta.WorkingDir.NormalizePath(path)
 		info, err := os.Stat(path)
 		if err != nil {
 			diags = diags.Append(tfdiags.Sourceless(
@@ -152,7 +148,7 @@ func (c *FmtCommand) fmt(paths []string, stdin io.Reader, stdout io.Writer, args
 						continue
 					}
 
-					fileDiags := c.processFile(c.Meta.WorkingDir.NormalizePath(path), f, stdout, args)
+					fileDiags := c.processFile(path, f, stdout, args)
 					diags = diags.Append(fileDiags)
 					_ = f.Close()
 
@@ -316,7 +312,7 @@ func (c *FmtCommand) processDir(path string, stdout io.Writer, args arguments.Fm
 					continue
 				}
 
-				fileDiags := c.processFile(c.Meta.WorkingDir.NormalizePath(subPath), f, stdout, args)
+				fileDiags := c.processFile(subPath, f, stdout, args)
 				diags = diags.Append(fileDiags)
 				_ = f.Close()
 
@@ -587,49 +583,6 @@ func (c *FmtCommand) trimNewlines(tokens hclwrite.Tokens) hclwrite.Tokens {
 		}
 	}
 	return tokens[start:end]
-}
-
-func (c *FmtCommand) Help() string {
-	helpText := `
-Usage: tofu [global options] fmt [options] [target...]
-
-  Rewrites all OpenTofu configuration files to a canonical format. All
-  configuration files (.tf), variables files (.tfvars), and testing files 
-  (.tftest.hcl) are updated. JSON files (.tf.json, .tfvars.json, or 
-  .tftest.json) are not modified.
-
-  By default, fmt scans the current directory for configuration files. If you
-  provide a directory for the target argument, then fmt will scan that
-  directory instead. If you provide a file, then fmt will process just that
-  file. If you provide a single dash ("-"), then fmt will read from standard
-  input (STDIN).
-
-  The content must be in the OpenTofu language native syntax; JSON is not
-  supported.
-
-Options:
-
-  -list=false    Don't list files whose formatting differs
-                 (always disabled if using STDIN)
-
-  -write=false   Don't write to source files
-                 (always disabled if using STDIN or -check)
-
-  -diff          Display diffs of formatting changes
-
-  -check         Check if the input is formatted. Exit status will be 0 if all
-                 input is properly formatted and non-zero otherwise.
-
-  -no-color      If specified, output won't contain any color.
-
-  -recursive     Also process files in subdirectories. By default, only the
-                 given directory (or current directory) is processed.
-`
-	return strings.TrimSpace(helpText)
-}
-
-func (c *FmtCommand) Synopsis() string {
-	return "Reformat your configuration in the standard style"
 }
 
 func withTempFile(b []byte, fn func(*os.File) error) error {

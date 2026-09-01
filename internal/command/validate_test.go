@@ -52,7 +52,7 @@ func setupTest(t *testing.T, fixturepath string, args ...string) (*terminal.Test
 			},
 		},
 	}
-	c := &ValidateCommand{
+	meta := Meta{
 		WorkingDir:       workdir.NewDir("."),
 		testingOverrides: metaOverridesForProvider(p),
 		View:             view,
@@ -61,7 +61,7 @@ func setupTest(t *testing.T, fixturepath string, args ...string) (*terminal.Test
 	args = append(args, "-no-color")
 	args = append(args, testFixturePath(fixturepath))
 
-	code := c.Run(args)
+	code := RunCommander(t, ValidateCommander(), meta, args)
 	return done(t), code
 }
 
@@ -79,14 +79,14 @@ func TestValidateCommandWithTfvarsFile(t *testing.T) {
 	t.Chdir(td)
 
 	view, done := testView(t)
-	c := &ValidateCommand{
+	meta := Meta{
 		WorkingDir:       workdir.NewDir("."),
 		testingOverrides: metaOverridesForProvider(testProvider()),
 		View:             view,
 	}
 
 	args := []string{}
-	code := c.Run(args)
+	code := RunCommander(t, ValidateCommander(), meta, args)
 	output := done(t)
 	if code != 0 {
 		t.Fatalf("bad %d\n\n%s", code, output.Stderr())
@@ -259,7 +259,7 @@ func TestValidateWithInvalidTestFile(t *testing.T) {
 
 	view, done := testView(t)
 	provider := testing_command.NewProvider(nil)
-	c := &ValidateCommand{
+	meta := Meta{
 		WorkingDir:       workdir.NewDir("."),
 		testingOverrides: metaOverridesForProvider(provider.Provider),
 		View:             view,
@@ -269,7 +269,7 @@ func TestValidateWithInvalidTestFile(t *testing.T) {
 	args = append(args, "-no-color")
 	args = append(args, testFixturePath("test/invalid"))
 
-	code := c.Run(args)
+	code := RunCommander(t, ValidateCommander(), meta, args)
 	output := done(t)
 
 	if code != 1 {
@@ -309,11 +309,7 @@ func TestValidateWithInvalidTestModule(t *testing.T) {
 		ProviderSource:   providerSource,
 	}
 
-	init := &InitCommand{
-		Meta: meta,
-	}
-
-	code := init.Run(nil)
+	code := RunCommander(t, InitCommander(), meta, nil)
 	output := done(t)
 	if code != 0 {
 		t.Fatalf("expected status code 0 but got %d: %s", code, output.Stderr())
@@ -322,14 +318,11 @@ func TestValidateWithInvalidTestModule(t *testing.T) {
 	streams, done = terminal.StreamsForTesting(t)
 	view = views.NewView(streams)
 	meta.View = view
-	c := &ValidateCommand{
-		Meta: meta,
-	}
 
 	var args []string
 	args = append(args, "-no-color")
 
-	code = c.Run(args)
+	code = RunCommander(t, ValidateCommander(), meta, args)
 	output = done(t)
 
 	if code != 1 {
@@ -344,62 +337,66 @@ func TestValidateWithInvalidTestModule(t *testing.T) {
 
 func TestValidate_json(t *testing.T) {
 	tests := []struct {
-		path  string
-		valid bool
+		path           string
+		additionalArgs []string
+		valid          bool
 	}{
-		{"validate-valid", true},
-		{"validate-invalid", false},
-		{"validate-invalid/missing_quote", false},
-		{"validate-invalid/missing_var", false},
-		{"validate-invalid/multiple_providers", false},
-		{"validate-invalid/multiple_modules", false},
-		{"validate-invalid/multiple_resources", false},
-		{"validate-invalid/duplicate_import_targets", false},
-		{"validate-invalid/outputs", false},
-		{"validate-invalid/incorrectmodulename", false},
-		{"validate-invalid/interpolation", false},
-		{"validate-invalid/missing_defined_var", true},
+		{"validate-valid", nil, true},
+		{"validate-invalid", nil, false},
+		{"validate-invalid/missing_quote", nil, false},
+		{"validate-invalid/missing_var", nil, false},
+		{"validate-invalid/multiple_providers", nil, false},
+		{"validate-invalid/multiple_modules", nil, false},
+		{"validate-invalid/multiple_resources", nil, false},
+		{"validate-invalid/duplicate_import_targets", nil, false},
+		{"validate-invalid/outputs", nil, false},
+		{"validate-invalid/incorrectmodulename", nil, false},
+		{"validate-invalid/interpolation", nil, false},
+		{"validate-invalid/missing_defined_var", nil, true},
+		{"validate-invalid/with_lint_warning", []string{"-lint=core:unused-variable"}, true},
 	}
 
-	cmpOpts := cmp.Options{
-		// Filenames are defined as Unix paths in `output.json`, this
-		// is needed to convert them to the correct path for the current OS.
-		cmp.FilterPath(
-			func(p cmp.Path) bool {
-				field := p.Last().String()
-				return field == `["filename"]`
-			},
-			//
-			cmp.Transformer("filename", func(filename any) string {
-				convertedFilename, ok := filename.(string)
-				if !ok {
-					t.Fatalf("failed to convert filename to string: %v", filename)
-				}
-				return filepath.FromSlash(convertedFilename)
-			}),
-		),
-		// Detail field contains file path along with other information. '/' are
-		// being replaced if Windows is the current OS.
-		cmp.FilterPath(
-			func(p cmp.Path) bool {
-				field := p.Last().String()
-				return field == `["detail"]`
-			},
-			cmp.Transformer("detail", func(detail any) string {
-				convertedDetail, ok := detail.(string)
-				if !ok {
-					t.Fatalf("failed to convert detail to string: %v", detail)
-				}
-				if runtime.GOOS == "windows" {
-					convertedDetail = strings.ReplaceAll(convertedDetail, `\`, `/`)
-				}
-				return convertedDetail
-			}),
-		),
+	cmpOpts := func(t *testing.T) cmp.Options {
+		return cmp.Options{
+			// Filenames are defined as Unix paths in `output.json`, this
+			// is needed to convert them to the correct path for the current OS.
+			cmp.FilterPath(
+				func(p cmp.Path) bool {
+					field := p.Last().String()
+					return field == `["filename"]`
+				},
+				//
+				cmp.Transformer("filename", func(filename any) string {
+					convertedFilename, ok := filename.(string)
+					if !ok {
+						t.Fatalf("failed to convert filename to string: %v", filename)
+					}
+					return filepath.FromSlash(convertedFilename)
+				}),
+			),
+			// Detail field contains file path along with other information. '/' are
+			// being replaced if Windows is the current OS.
+			cmp.FilterPath(
+				func(p cmp.Path) bool {
+					field := p.Last().String()
+					return field == `["detail"]`
+				},
+				cmp.Transformer("detail", func(detail any) string {
+					convertedDetail, ok := detail.(string)
+					if !ok {
+						t.Fatalf("failed to convert detail to string: %v", detail)
+					}
+					if runtime.GOOS == "windows" {
+						convertedDetail = strings.ReplaceAll(convertedDetail, `\`, `/`)
+					}
+					return convertedDetail
+				}),
+			),
+		}
 	}
 
 	for _, tc := range tests {
-		t.Run(tc.path, func(t *testing.T) {
+		t.Run(strings.ReplaceAll(tc.path, "/", "_"), func(t *testing.T) {
 			var want, got map[string]any
 
 			wantFile, err := os.Open(path.Join(testFixturePath(tc.path), "output.json"))
@@ -411,12 +408,12 @@ func TestValidate_json(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to read output file: %s", err)
 			}
-			err = json.Unmarshal([]byte(wantBytes), &want)
+			err = json.Unmarshal(wantBytes, &want)
 			if err != nil {
 				t.Fatalf("failed to unmarshal expected JSON: %s", err)
 			}
 
-			output, code := setupTest(t, tc.path, "-json")
+			output, code := setupTest(t, tc.path, append(tc.additionalArgs, "-json")...)
 
 			gotString := output.Stdout()
 			err = json.Unmarshal([]byte(gotString), &got)
@@ -424,7 +421,7 @@ func TestValidate_json(t *testing.T) {
 				t.Fatalf("failed to unmarshal actual JSON: %s", err)
 			}
 
-			if !cmp.Equal(got, want, cmpOpts) {
+			if !cmp.Equal(got, want, cmpOpts(t)) {
 				t.Errorf("wrong output:\n %v\n", cmp.Diff(got, want))
 				t.Errorf("raw output:\n%s\n", gotString)
 			}

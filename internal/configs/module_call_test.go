@@ -21,6 +21,7 @@ import (
 	"github.com/zclconf/go-cty/cty"
 
 	"github.com/opentofu/opentofu/internal/addrs"
+	"github.com/opentofu/opentofu/internal/configs/symlib"
 )
 
 func TestLoadModuleCall(t *testing.T) {
@@ -156,7 +157,7 @@ func TestLoadModuleCall(t *testing.T) {
 	for _, m := range gotModules {
 		// This is a structural issue which existed before static evaluation, but has been made worse by it
 		// See https://github.com/opentofu/opentofu/issues/1467 for more details
-		eval := NewStaticEvaluator(nil, RootModuleCallForTesting())
+		eval := NewStaticEvaluator(nil, nil, RootModuleCallForTesting())
 		diags := m.decodeStaticFields(t.Context(), eval)
 		if diags.HasErrors() {
 			t.Fatal(diags.Error())
@@ -247,7 +248,7 @@ func TestModuleCallWithVersion(t *testing.T) {
 	}
 
 	// Create a module from the loaded file
-	mod, diags := NewModule([]*File{file}, nil, RootModuleCallForTesting(), "testdata", SelectiveLoadAll)
+	mod, diags := NewModule([]*File{file}, nil, "testdata", SelectiveLoadAll)
 	if diags.HasErrors() {
 		t.Fatalf("unexpected errors creating module: %s", diags.Error())
 	}
@@ -333,7 +334,7 @@ func TestModuleCallWithVersion(t *testing.T) {
 
 	for _, m := range gotModules {
 		// Create a static evaluator with the module context
-		eval := NewStaticEvaluator(mod, RootModuleCallForTesting())
+		eval := NewStaticEvaluator(mod, nil, RootModuleCallForTesting())
 		diags := m.decodeStaticFields(t.Context(), eval)
 		if diags.HasErrors() {
 			t.Fatal(diags.Error())
@@ -425,7 +426,10 @@ variable "path" {
 				}
 				tFiles = append(tFiles, f)
 			}
-			_, diags := NewModule(tFiles, nil, call, "testdata", SelectiveLoadAll)
+			mod, diags := NewModule(tFiles, nil, "testdata", SelectiveLoadAll)
+			if mod != nil {
+				diags = diags.Extend(mod.Finalize(symlib.EmptyTable, call))
+			}
 			if tc.err == "" {
 				if diags.HasErrors() {
 					t.Errorf("unexpected errors creating module: %s", diags.Error())

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/opentofu/opentofu/internal/collections"
+	"github.com/opentofu/opentofu/internal/linting"
 	"github.com/opentofu/opentofu/internal/tfdiags"
 
 	"github.com/google/go-cmp/cmp"
@@ -30,6 +32,8 @@ func TestParsePlan_basicValid(t *testing.T) {
 					ConsolidateWarnings: true,
 					InputEnabled:        true,
 					ViewType:            ViewHuman,
+					LintInclude:         make(collections.Set[linting.RuleAddr]),
+					LintExclude:         make(collections.Set[linting.RuleAddr]),
 				},
 				OutPath: "",
 				State:   &State{Lock: true},
@@ -49,8 +53,52 @@ func TestParsePlan_basicValid(t *testing.T) {
 					ConsolidateWarnings: true,
 					InputEnabled:        false,
 					ViewType:            ViewHuman,
+					LintInclude:         make(collections.Set[linting.RuleAddr]),
+					LintExclude:         make(collections.Set[linting.RuleAddr]),
 				},
 				OutPath: "saved.tfplan",
+				State:   &State{Lock: true},
+				Vars:    &Vars{},
+				Operation: &Operation{
+					PlanMode:    plans.DestroyMode,
+					Parallelism: 10,
+					Refresh:     true,
+				},
+			},
+		},
+		"linting flag correctly parsed": {
+			[]string{"-lint=core:all"},
+			&Plan{
+				DetailedExitCode: false,
+				View: &View{
+					ConsolidateWarnings: true,
+					InputEnabled:        true,
+					ViewType:            ViewHuman,
+					LintInclude:         collections.NewSet[linting.RuleAddr](linting.MustParseRuleAddr("core:all")),
+					LintExclude:         make(collections.Set[linting.RuleAddr]),
+				},
+				OutPath: "",
+				State:   &State{Lock: true},
+				Vars:    &Vars{},
+				Operation: &Operation{
+					PlanMode:    plans.NormalMode,
+					Parallelism: 10,
+					Refresh:     true,
+				},
+			},
+		},
+		"linting with destroy disables linting": {
+			[]string{"-lint=core:all", "-destroy"},
+			&Plan{
+				DetailedExitCode: false,
+				View: &View{
+					ConsolidateWarnings: true,
+					InputEnabled:        true,
+					ViewType:            ViewHuman,
+					LintInclude:         make(collections.Set[linting.RuleAddr]), // <- this is expected to be empty
+					LintExclude:         make(collections.Set[linting.RuleAddr]),
+				},
+				OutPath: "",
 				State:   &State{Lock: true},
 				Vars:    &Vars{},
 				Operation: &Operation{
@@ -68,6 +116,8 @@ func TestParsePlan_basicValid(t *testing.T) {
 					ConsolidateWarnings: true,
 					InputEnabled:        false,
 					ViewType:            ViewJSON,
+					LintInclude:         make(collections.Set[linting.RuleAddr]),
+					LintExclude:         make(collections.Set[linting.RuleAddr]),
 				},
 				OutPath: "",
 				State:   &State{Lock: true},

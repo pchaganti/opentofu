@@ -13,6 +13,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/hashicorp/hcl/v2"
 	"github.com/opentofu/opentofu/internal/addrs"
+	"github.com/opentofu/opentofu/internal/configs/symlib"
 	"github.com/opentofu/opentofu/internal/lang/marks"
 	"github.com/opentofu/opentofu/internal/tfdiags"
 	"github.com/zclconf/go-cty-debug/ctydebug"
@@ -185,7 +186,8 @@ func TestStaticScope_GetInputVariable(t *testing.T) {
 			".",
 			"irrelevant",
 		)
-		mod, diags := p.LoadConfigDir(".", call)
+		mod, diags := p.LoadConfigDir(".")
+		diags = diags.Extend(mod.Finalize(symlib.EmptyTable, call))
 		assertNoDiagnostics(t, diags)
 
 		// We'll make sure the config and the test cases remain consistent
@@ -202,7 +204,7 @@ func TestStaticScope_GetInputVariable(t *testing.T) {
 			}
 		}
 
-		eval := NewStaticEvaluator(mod, call)
+		eval := NewStaticEvaluator(mod, nil, call)
 		scope := newStaticScope(eval, test_ident)
 
 		for name, test := range tests {
@@ -235,10 +237,11 @@ func TestStaticScope_GetInputVariable(t *testing.T) {
 			".",
 			"irrelevant",
 		)
-		mod, diags := p.LoadConfigDir(".", call)
+		mod, diags := p.LoadConfigDir(".")
+		diags = diags.Extend(mod.Finalize(symlib.EmptyTable, call))
 		assertNoDiagnostics(t, diags)
 
-		eval := NewStaticEvaluator(mod, call)
+		eval := NewStaticEvaluator(mod, nil, call)
 		scope := newStaticScope(eval, test_ident)
 
 		addr := addrs.InputVariable{Name: "bad_default"}
@@ -273,10 +276,11 @@ func TestStaticScope_GetInputVariable(t *testing.T) {
 			".",
 			"irrelevant",
 		)
-		mod, diags := p.LoadConfigDir(".", call)
+		mod, diags := p.LoadConfigDir(".")
+		diags = diags.Extend(mod.Finalize(symlib.EmptyTable, call))
 		assertNoDiagnostics(t, diags)
 
-		eval := NewStaticEvaluator(mod, call)
+		eval := NewStaticEvaluator(mod, nil, call)
 		scope := newStaticScope(eval, test_ident)
 
 		addr := addrs.InputVariable{Name: "not_nullable"}
@@ -315,10 +319,11 @@ func TestStaticScope_GetLocalValue(t *testing.T) {
 			".",
 			"irrelevant",
 		)
-		mod, diags := p.LoadConfigDir(".", call)
+		mod, diags := p.LoadConfigDir(".")
+		diags = diags.Extend(mod.Finalize(symlib.EmptyTable, call))
 		assertNoDiagnostics(t, diags)
 
-		eval := NewStaticEvaluator(mod, call)
+		eval := NewStaticEvaluator(mod, nil, call)
 		scope := newStaticScope(eval, test_ident)
 
 		addr := addrs.LocalValue{Name: "foo"}
@@ -346,10 +351,11 @@ func TestStaticScope_GetLocalValue(t *testing.T) {
 			".",
 			"irrelevant",
 		)
-		mod, diags := p.LoadConfigDir(".", call)
+		mod, diags := p.LoadConfigDir(".")
+		diags = diags.Extend(mod.Finalize(symlib.EmptyTable, call))
 		assertNoDiagnostics(t, diags)
 
-		eval := NewStaticEvaluator(mod, call)
+		eval := NewStaticEvaluator(mod, nil, call)
 		scope := newStaticScope(eval, test_ident)
 
 		addr := addrs.LocalValue{Name: "nonexist"}

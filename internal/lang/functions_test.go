@@ -1357,7 +1357,7 @@ func TestFunctions(t *testing.T) {
 	}
 
 	experimentalFuncs := map[string]experiments.Experiment{}
-	experimentalFuncs["defaults"] = experiments.ModuleVariableOptionalAttrs
+	experimentalFuncs["defaults"] = experiments.Experiment("custom_experiment")
 
 	t.Run("all functions are tested", func(t *testing.T) {
 		data := &dataForTests{} // no variables available; we only need literals here
@@ -1470,7 +1470,7 @@ func TestFunctions(t *testing.T) {
 
 func TestFunctionsPrefixedCorrectly(t *testing.T) {
 	dir := t.TempDir()
-	baseFuncs := makeBaseFunctionTable(dir)
+	baseFuncs := makeBaseFunctionTable(dir, nil)
 	s := &Scope{BaseDir: dir}
 	got := s.Functions()
 

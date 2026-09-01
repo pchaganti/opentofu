@@ -14,6 +14,7 @@ import (
 	"github.com/opentofu/opentofu/internal/addrs"
 	"github.com/opentofu/opentofu/internal/configs"
 	"github.com/opentofu/opentofu/internal/dag"
+	"github.com/opentofu/opentofu/internal/linting/corelinting"
 	"github.com/opentofu/opentofu/internal/tfdiags"
 )
 
@@ -31,6 +32,7 @@ type NodeRootVariable struct {
 }
 
 var (
+	_ graphNodeVariableConfig = (*NodeRootVariable)(nil)
 	_ GraphNodeExecutable     = (*NodeRootVariable)(nil)
 	_ GraphNodeModuleInstance = (*NodeRootVariable)(nil)
 	_ GraphNodeReferenceable  = (*NodeRootVariable)(nil)
@@ -55,13 +57,14 @@ func (n *NodeRootVariable) ReferenceableAddrs() []addrs.Referenceable {
 }
 
 // GraphNodeExecutable
-func (n *NodeRootVariable) Execute(_ context.Context, evalCtx EvalContext, op walkOperation) tfdiags.Diagnostics {
+func (n *NodeRootVariable) Execute(ctx context.Context, evalCtx EvalContext, op walkOperation) tfdiags.Diagnostics {
 	// Root module variables are special in that they are provided directly
 	// by the caller (usually, the CLI layer) and so we don't really need to
 	// evaluate them in the usual sense, but we do need to process the raw
 	// values given by the caller to match what the module is expecting, and
 	// make sure the values are valid.
 	var diags tfdiags.Diagnostics
+	diags = diags.Append(corelinting.RootVariableWithNoType(ctx, n.Config))
 
 	addr := addrs.RootModuleInstance.InputVariable(n.Addr.Name)
 	log.Printf("[TRACE] NodeRootVariable: evaluating %s", addr)
@@ -113,4 +116,9 @@ func (n *NodeRootVariable) DotNode(name string, opts *dag.DotOpts) *dag.DotNode 
 			"shape": "note",
 		},
 	}
+}
+
+// graphNodeVariableConfig
+func (n *NodeRootVariable) VariableConfig() *configs.Variable {
+	return n.Config
 }

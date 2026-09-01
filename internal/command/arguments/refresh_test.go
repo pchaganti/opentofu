@@ -12,6 +12,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/hashicorp/hcl/v2"
 	"github.com/opentofu/opentofu/internal/addrs"
+	"github.com/opentofu/opentofu/internal/collections"
+	"github.com/opentofu/opentofu/internal/linting"
 	"github.com/opentofu/opentofu/internal/tfdiags"
 )
 
@@ -27,6 +29,8 @@ func TestParseRefresh_basicValid(t *testing.T) {
 					ConsolidateWarnings: true,
 					InputEnabled:        true,
 					ViewType:            ViewHuman,
+					LintInclude:         make(collections.Set[linting.RuleAddr]),
+					LintExclude:         make(collections.Set[linting.RuleAddr]),
 				},
 			},
 		},
@@ -37,7 +41,35 @@ func TestParseRefresh_basicValid(t *testing.T) {
 					ConsolidateWarnings: true,
 					InputEnabled:        false,
 					ViewType:            ViewHuman,
+					LintInclude:         make(collections.Set[linting.RuleAddr]),
+					LintExclude:         make(collections.Set[linting.RuleAddr]),
 				},
+			},
+		},
+		"linting flag correctly parsed": {
+			[]string{"-lint=core:all"},
+			&Refresh{
+				View: &View{
+					ConsolidateWarnings: true,
+					InputEnabled:        true,
+					ViewType:            ViewHuman,
+					LintInclude:         collections.NewSet[linting.RuleAddr](linting.MustParseRuleAddr("core:all")),
+					LintExclude:         make(collections.Set[linting.RuleAddr]),
+				},
+			},
+		},
+		"linting with destroy disables linting": {
+			[]string{"-lint=core:all", "-destroy"},
+			&Refresh{
+				View: &View{
+					ConsolidateWarnings: true,
+					InputEnabled:        true,
+					ViewType:            ViewHuman,
+					LintInclude:         make(collections.Set[linting.RuleAddr]), // <- this is expected to be empty
+					LintExclude:         make(collections.Set[linting.RuleAddr]),
+				},
+				// Since the LintInclude is empty, there is no need to check operation since that being empty means
+				// that the operation.planMode == destroy
 			},
 		},
 		"JSON view disables input": {
@@ -47,6 +79,8 @@ func TestParseRefresh_basicValid(t *testing.T) {
 					ConsolidateWarnings: true,
 					InputEnabled:        false,
 					ViewType:            ViewJSON,
+					LintInclude:         make(collections.Set[linting.RuleAddr]),
+					LintExclude:         make(collections.Set[linting.RuleAddr]),
 				},
 			},
 		},
@@ -58,7 +92,7 @@ func TestParseRefresh_basicValid(t *testing.T) {
 			if len(diags) > 0 {
 				t.Fatalf("unexpected diags: %v", diags)
 			}
-			// Ignore the extended arguments for simplicity
+			// Ignore the extended arguments for simplicity but not operation
 			got.State = nil
 			got.Operation = nil
 			got.Vars = nil
@@ -70,16 +104,18 @@ func TestParseRefresh_basicValid(t *testing.T) {
 }
 
 func TestParseRefresh_invalid(t *testing.T) {
-	got, _, diags := ParseRefresh([]string{"-frob"})
-	if len(diags) == 0 {
-		t.Fatal("expected diags but got none")
-	}
-	if got, want := diags.Err().Error(), "flag provided but not defined"; !strings.Contains(got, want) {
-		t.Fatalf("wrong diags\n got: %s\nwant: %s", got, want)
-	}
-	if got.View.ViewType != ViewHuman {
-		t.Fatalf("wrong view type, got %#v, want %#v", got.View.ViewType, ViewHuman)
-	}
+	t.Run("invalid flag provided", func(t *testing.T) {
+		got, _, diags := ParseRefresh([]string{"-frob"})
+		if len(diags) == 0 {
+			t.Fatal("expected diags but got none")
+		}
+		if got, want := diags.Err().Error(), "flag provided but not defined"; !strings.Contains(got, want) {
+			t.Fatalf("wrong diags\n got: %s\nwant: %s", got, want)
+		}
+		if got.View.ViewType != ViewHuman {
+			t.Fatalf("wrong view type, got %#v, want %#v", got.View.ViewType, ViewHuman)
+		}
+	})
 }
 
 func TestParseRefresh_tooManyArguments(t *testing.T) {

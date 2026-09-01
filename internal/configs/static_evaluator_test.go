@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/opentofu/opentofu/internal/configs/configschema"
+	"github.com/opentofu/opentofu/internal/configs/symlib"
 	"github.com/opentofu/opentofu/internal/lang/marks"
 	"github.com/zclconf/go-cty/cty"
 )
@@ -95,7 +96,8 @@ resource "foo" "bar" {}
 	dummyIdentifier := StaticIdentifier{Subject: "local.test"}
 
 	t.Run("Empty Eval", func(t *testing.T) {
-		mod, _ := NewModule([]*File{file}, nil, RootModuleCallForTesting(), "dir", SelectiveLoadAll)
+		mod, _ := NewModule([]*File{file}, nil, "dir", SelectiveLoadAll)
+		_ = mod.Finalize(symlib.EmptyTable, RootModuleCallForTesting())
 		emptyEval := StaticEvaluator{}
 
 		// Expr with no traversals shouldn't access any fields
@@ -118,8 +120,9 @@ resource "foo" "bar" {}
 	})
 
 	t.Run("Simple static cases", func(t *testing.T) {
-		mod, _ := NewModule([]*File{file}, nil, RootModuleCallForTesting(), "dir", SelectiveLoadAll)
-		eval := NewStaticEvaluator(mod, RootModuleCallForTesting())
+		mod, _ := NewModule([]*File{file}, nil, "dir", SelectiveLoadAll)
+		_ = mod.Finalize(symlib.EmptyTable, RootModuleCallForTesting())
+		eval := NewStaticEvaluator(mod, nil, RootModuleCallForTesting())
 
 		locals := []struct {
 			ident string
@@ -155,8 +158,9 @@ resource "foo" "bar" {}
 			}
 			return v.Default, nil
 		}, "<testing>", "")
-		mod, _ := NewModule([]*File{file}, nil, call, "dir", SelectiveLoadAll)
-		eval := NewStaticEvaluator(mod, call)
+		mod, _ := NewModule([]*File{file}, nil, "dir", SelectiveLoadAll)
+		_ = mod.Finalize(symlib.EmptyTable, call)
+		eval := NewStaticEvaluator(mod, nil, call)
 
 		locals := []struct {
 			ident string
@@ -181,8 +185,9 @@ resource "foo" "bar" {}
 	})
 
 	t.Run("Bad References", func(t *testing.T) {
-		mod, _ := NewModule([]*File{file}, nil, RootModuleCallForTesting(), "dir", SelectiveLoadAll)
-		eval := NewStaticEvaluator(mod, RootModuleCallForTesting())
+		mod, _ := NewModule([]*File{file}, nil, "dir", SelectiveLoadAll)
+		_ = mod.Finalize(symlib.EmptyTable, RootModuleCallForTesting())
+		eval := NewStaticEvaluator(mod, nil, RootModuleCallForTesting())
 
 		locals := []struct {
 			ident string
@@ -201,8 +206,9 @@ resource "foo" "bar" {}
 	})
 
 	t.Run("Circular References", func(t *testing.T) {
-		mod, _ := NewModule([]*File{file}, nil, RootModuleCallForTesting(), "dir", SelectiveLoadAll)
-		eval := NewStaticEvaluator(mod, RootModuleCallForTesting())
+		mod, _ := NewModule([]*File{file}, nil, "dir", SelectiveLoadAll)
+		_ = mod.Finalize(symlib.EmptyTable, RootModuleCallForTesting())
+		eval := NewStaticEvaluator(mod, nil, RootModuleCallForTesting())
 
 		locals := []struct {
 			ident string
@@ -238,8 +244,9 @@ resource "foo" "bar" {}
 				Subject:  v.DeclRange.Ptr(),
 			}}
 		}, "<testing>", "")
-		mod, _ := NewModule([]*File{file}, nil, call, "dir", SelectiveLoadAll)
-		eval := NewStaticEvaluator(mod, call)
+		mod, _ := NewModule([]*File{file}, nil, "dir", SelectiveLoadAll)
+		_ = mod.Finalize(symlib.EmptyTable, call)
+		eval := NewStaticEvaluator(mod, nil, call)
 
 		badref := mod.Locals["ref_c"]
 		_, diags := eval.Evaluate(t.Context(), badref.Expr, StaticIdentifier{Subject: fmt.Sprintf("local.%s", badref.Name), DeclRange: badref.DeclRange})
@@ -252,8 +259,9 @@ resource "foo" "bar" {}
 	})
 
 	t.Run("Missing References", func(t *testing.T) {
-		mod, _ := NewModule([]*File{file}, nil, RootModuleCallForTesting(), "dir", SelectiveLoadAll)
-		eval := NewStaticEvaluator(mod, RootModuleCallForTesting())
+		mod, _ := NewModule([]*File{file}, nil, "dir", SelectiveLoadAll)
+		_ = mod.Finalize(symlib.EmptyTable, RootModuleCallForTesting())
+		eval := NewStaticEvaluator(mod, nil, RootModuleCallForTesting())
 
 		locals := []struct {
 			ident string
@@ -273,8 +281,9 @@ resource "foo" "bar" {}
 
 	t.Run("Workspace", func(t *testing.T) {
 		call := NewStaticModuleCall(nil, hcl.Range{}, nil, "<testing>", "my-workspace")
-		mod, _ := NewModule([]*File{file}, nil, call, "dir", SelectiveLoadAll)
-		eval := NewStaticEvaluator(mod, call)
+		mod, _ := NewModule([]*File{file}, nil, "dir", SelectiveLoadAll)
+		_ = mod.Finalize(symlib.EmptyTable, call)
+		eval := NewStaticEvaluator(mod, nil, call)
 
 		value, diags := eval.Evaluate(t.Context(), mod.Locals["ws"].Expr, dummyIdentifier)
 		if diags.HasErrors() {
@@ -286,8 +295,9 @@ resource "foo" "bar" {}
 	})
 
 	t.Run("Functions", func(t *testing.T) {
-		mod, _ := NewModule([]*File{file}, nil, RootModuleCallForTesting(), "dir", SelectiveLoadAll)
-		eval := NewStaticEvaluator(mod, RootModuleCallForTesting())
+		mod, _ := NewModule([]*File{file}, nil, "dir", SelectiveLoadAll)
+		_ = mod.Finalize(symlib.EmptyTable, RootModuleCallForTesting())
+		eval := NewStaticEvaluator(mod, nil, RootModuleCallForTesting())
 
 		value, diags := eval.Evaluate(t.Context(), mod.Locals["func"].Expr, dummyIdentifier)
 		if diags.HasErrors() {
@@ -311,7 +321,8 @@ func TestStaticEvaluator_DecodeExpression(t *testing.T) {
 	if fileDiags.HasErrors() {
 		t.Fatal(fileDiags)
 	}
-	mod, _ := NewModule([]*File{file}, nil, RootModuleCallForTesting(), "dir", SelectiveLoadAll)
+	mod, _ := NewModule([]*File{file}, nil, "dir", SelectiveLoadAll)
+	_ = mod.Finalize(symlib.EmptyTable, RootModuleCallForTesting())
 	mod.Locals["my_ephemeral_local"] = &Local{
 		Name:      "my_ephemeral_local",
 		Expr:      hcl.StaticExpr(cty.StringVal("ephemeral local value").Mark(marks.Ephemeral), hcl.Range{}),
@@ -322,7 +333,7 @@ func TestStaticEvaluator_DecodeExpression(t *testing.T) {
 		Expr:      hcl.StaticExpr(cty.StringVal("sensitive local value").Mark(marks.Sensitive), hcl.Range{}),
 		DeclRange: hcl.Range{},
 	}
-	eval := NewStaticEvaluator(mod, RootModuleCallForTesting())
+	eval := NewStaticEvaluator(mod, nil, RootModuleCallForTesting())
 	cases := []struct {
 		expr  string
 		diags []string
@@ -443,7 +454,8 @@ terraform {
 					return v.Default, nil
 				},
 			}
-			mod, _ := NewModule([]*File{file}, nil, modCall, "dir", SelectiveLoadAll)
+			mod, _ := NewModule([]*File{file}, nil, "dir", SelectiveLoadAll)
+			_ = mod.Finalize(symlib.EmptyTable, modCall)
 
 			_, diags := mod.Backend.Hash(t.Context(), schema)
 			if diags.HasErrors() {
