@@ -226,154 +226,294 @@ For point releases, simply copy the section from the [CHANGELOG.md](CHANGELOG.md
 
 ---
 
-## Redeploying get.opentofu.org
+## Check the Post-release Workflow
 
-After the release is published, `get.opentofu.org` needs to be redeployed so that the
-installer picks up the new version.
+If you have published a version that is now considered to be the latest stable release, this should automatically trigger a "Post-release" GitHub actions workflow.
 
-> [!IMPORTANT]
-> This step must be done **after** clicking `Publish release` above. It does not happen
-> automatically: releases are created as drafts by `github-actions[bot]`, so the
-> `release` event does not reliably trigger the redeploy workflow on its own.
+Verify that this worked as expected by checking [the run history for the "Post-release" workflow](https://github.com/opentofu/opentofu/actions/workflows/post-release.yml). There should be a run named after the version you just published and it should complete successfully.
 
-1. Head to the [Actions tab](https://github.com/opentofu/opentofu/actions) on the main repository.
-2. Select the `Post-release` workflow on the left side.
-3. Click the `Run workflow` button and run it against the `main` branch.
-
-This invokes the Cloudflare deploy hook that redeploys `get.opentofu.org`. You no longer
-need to log into Cloudflare manually for this step.
+You can safely re-run this workflow on failure as long as the release whose job you are re-running is still considered to be the latest release.
 
 ---
 
 ## Updating the website/documentation
 
-Depending on the release type, you will need to update the [opentofu.org](https://github.com/opentofu/opentofu.org) repository.
+All releases require some sort of update to the [opentofu.org](https://github.com/opentofu/opentofu.org) repository, but the details depend on what kind of release you are publishing.
 
-Before you begin, make sure that all submodules are up to date by running:
+Before you begin, make sure that all submodules are initialized:
 
 ```
 git submodule init
-git submodule update
 ```
 
 > [!WARNING]
 > If you are using Windows, make sure your system supports symlinks by enabling developer mode and enabling symlinks in git.
 
-<details>
-<summary>
+The following summarizes what we need to do for each kind of release:
 
-### Beta (`X.Y.Z-betaW`) and Release Candidate (`X.Y.Z-rcW`)
+- Beta release for new series (e.g. v1.8.0-beta1): [Introduce new release series](#website-new-release-series).
+- Subsequent beta release or release candidate for new series (e.g. v1.8.0-beta2 or v1.8.0-rc1): [Git submodule update](#website-submodule-update)
+- Final release for new series (e.g. v1.8.0): [Change the default version](#website-change-default-version).
+- Patch release in existing series (e.g. v1.8.1): [Git submodule update](#website-submodule-update)
 
-</summary>
-
-We do not release documentation for non-stable releases, any links should point at the development/main version in our documentation. There is no action needed beyond publishing the blog post.
-
-</details>
+The following subsections describe the process for each of these types of changes.
 
 <details><summary>
 
-### Stable (`X.Y.0`)
+### <span id="website-new-release-series">Introduce new release series</span>
 
 </summary>
 
-1. Add a submodule for the new release to the website repository:
+When we publish the first beta release for a new release series (e.g. v1.8.0-beta1) we establish the configuration and git submodule for that series' maintenence branch, with it initially listed as "(beta)" in the navigation. This is so that folks participating in prerelease testing can more easily find the relevant documentation for new features.
+
+Before performing these steps, the maintenence branch (e.g. `v1.8`) must've been created in the main `opentofu/opentofu` repository, initially referring to the same commit as the `v1.8.0-beta1` tag.
+
+The following steps all take place in a work tree for the `opentofu/opentofu.org` repository:
+
+1. Add the new release series to the array of strings in `versions.json` in the root of the repository.
+2. Add a submodule for the new release to the website repository:
+   ```shell
+   git submodule add -b v1.8 https://github.com/opentofu/opentofu opentofu-repo/v1.8
    ```
-   git submodule add -b vX.Y https://github.com/opentofu/opentofu opentofu-repo/vX.Y
-   ```
-2. After you have done this, open the [`docusaurus.config.ts`](https://github.com/opentofu/opentofu.org/blob/main/docusaurus.config.ts) file and `presets` section.
-3. Here, locate the previous latest version:
-   ```
-   "vX.Y-1": {
-     label: "X.Y-1.x",
-     path: "",
-   },
-   ```
-   Change it to:
-   ```
-   "vX.Y-1": {
-     label: "X.Y-1.x",
-     path: "vX.Y-1",
-     banner: "none",
-   },
-   ```
-4. Now add the new version you are releasing:
-   ```
-   "vX.Y": {
-     label: "X.Y.x",
-     path: "",
-   },
-   ```
-5. Now locate any version that is no longer supported and remove the following line to add a deprecation warning:
-   ```
-     banner: "none",
-   ```
-6. Locate the `navbar` option and `Docs` dropdown to reflect the new version list. It should look something like this:
-   ```
-   items: [
-      {
-        label: "vX.Y.x (current)",
-        href: "/docs/"
+3. Open `docusaurus.config.ts` in your text editor and find the `presets` property, which contains a nested `versions` property containing an object for each release series, like this:
+   ```js
+      // ...
+      "v1.7": {
+         label: "1.7.x",
+         path: "v1.7",
+         banner: "none",
       },
-      {
-        label: "vX.Y-1.x",
-        href: "/docs/vX.Y-1/"
+      current: {
+         label: "1.7.x",
+         path: "",
+         banner: "none",
+      },
+      main: {
+         label: "Development",
+         path: "main",
+         banner: "unreleased",
+         noIndex: true,
       },
       // ...
-      {
-        label: "Development",
-        href: "/docs/main/"
+   ```
+
+   Just before the `current` property, introduce a property for the new series that's currently in beta, using the "unreleased" banner so that its pages will contain a warning about it being an unreleased version, and including "(beta)" in its label for now:
+
+   ```js
+      "v1.8": {
+         label: "1.8.x (beta)",
+         path: "v1.8",
+         banner: "unreleased",
       },
-    ],
    ```
-7. Add the necessary entries in the `versioned_sidebars` and `versioned_docs` directories.
+4. Still in `docusaurus.config.ts`, find the `navbar` property which includes an item whose label is "Docs" and whose nested items describe the navigation links for different versions, like this:
+   ```js
+      // ...
+      {
+         label: "v1.7.x",
+         href: "/docs/v1.7/",
+      },
+      {
+         label: "Development",
+         href: "/docs/main/",
+      },
+      // ...
+   ```
+
+   Add a new element to the end of the list just before the one labelled "Development" which matches the entry added to `presets` in the previous step:
+
+   ```js
+      {
+         label: "v1.8.x (beta)",
+         href: "/docs/v1.8/",
+      },
+   ```
+
+   (We'll move this new series to the top of the menu later once it becomes stable, but prerelease versions are always listed last.)
+5. Create a new file in the `versioned_sidebars` directory:
    ```shell
-   cp versioned_sidebars/version-v1.11-sidebars.json versioned_sidebars/version-vX.Y-sidebars.json
-   cd versioned_docs && ln -s ../opentofu-repo/vX.Y/website/docs version-vX.Y
+   cp versioned_sidebars/version-v1.7-sidebars.json versioned_sidebars/version-v1.8-sidebars.json
    ```
-8. Recreate the `docs` symlink in the root of the repository to refer to the `website` directory from the newly-added submodule, so that the new branch is used for unversioned doc URLs.
+
+   These files are typically identical between versions because they just tell Docusaurus to generate the navigation automatically based on the documentation files detected in the submodule directory.
+6. Create a symlink in the `versioned_docs` directory to help Docusaurus find the submodule for the new version:
    ```shell
-   # (make sure that your current working directory is the repository root)
-   rm docs
-   ln -s opentofu-repo/vX.Y/website/docs docs
+   ln -s ../opentofu-repo/v1.8/website/docs versioned_docs/version-v1.8
    ```
+
+After following these instructions you should be able to launch the local dev server for the website by running `docker compose up --build` and find a working link for the new release series near the bottom of the dropdown menu under "Docs" in the top navigation bar.
+
+If everything looks good then commit all of these changes and open a PR in the `opentofu.org` repository.
 
 </details>
 
 <details><summary>
 
-### Point release (`X.Y.Z`)
+### <span id="website-submodule-update">Git submodule update</span>
 
 </summary>
 
-For a point release, you merely need to make sure that the submodules for the supported versions are up to date. You can do this by running the following script:
+The website build process uses the commit currently selected by each of the submodules as the source of documentation for an OpenTofu release series.
 
-```bash
-cd opentofu-repo
-for ver in $(ls); do
-  cd "${ver}"
-  git pull origin "${ver}" 
-  cd ..
-  git add "${ver}"
-done
-```
+Each time we publish a new release in a series (including a new beta or release candidate during the prerelease period) we need to update the corresponding submodule in the `opentofu/opentofu.org` repository to match.
 
-Now you can commit your changes and open a pull request.
+For example, if you're releasing v1.8.1:
 
-> **Note:** You can safely run the script above anytime you need to update the documentation independently of a release. It's ok for the website to have minor doc fixes that are not in line with OpenTofu releases.
+1. Change directory into the submodule for the relevant series:
+   ```shell
+   cd opentofu-repo/v1.8
+   ```
+2. Fetch the newly-created tag and switch to it:
+   ```shell
+   git fetch origin v1.8.1
+   git checkout v1.8.1
+   ```
+3. We don't currently have any automation for keeping the "Development" section updated, so while you're here anyway it's a good opportunity to update that to whatever is currently the latest commit on the `main` branch:
+   ```shell
+   cd ../main
+   git pull --rebase
+   ```
+4. Return to the root directory and commit these changes:
+   ```shell
+   cd ../..
+   git add opentofu-repo/v1.8
+   git commit
+   ```
+
+Use `docker compose up --build` to start the dev server for the website and check that the "Docs" submenu in the to navigation still contains the relevant release series and that it's still possible to navigate to its documentation. If successful, submit these changes in a PR to the `opentofu.org` repository.
 
 </details>
 
-## GitHub milestone
-Once the release is public ensure that the GitHub milestones are updated:
-* Close the milestone for the closed release
-* Create the milestone for the next patch release
+<details><summary>
+
+### <span id="website-change-default-version">Change the default version</span>
+
+</summary>
+
+Once the prerelease period for a new release series is over and we're ready to publish its first stable release (e.g. v1.8.0) we need to adjust some of the configuration that we would've previously added when publishing v1.8.0-beta1 so that this series is now treated as the default version and no longer identified as being unreleased.
+
+The following steps all take place in a work tree for the `opentofu/opentofu.org` repository:
+
+1. Open `docusaurus.config.ts` in your text editor and find the `presets` property, which contains a nested `versions` property containing an object for each release series, including the beta entry for the newly-stable series:
+   ```js
+      // ...
+      "v1.7": {
+         label: "1.7.x",
+         path: "v1.7",
+         banner: "none",
+      },
+      "v1.8": {
+         label: "1.8.x (beta)",
+         path: "v1.8",
+         banner: "unreleased",
+      },
+      current: {
+         label: "1.7.x",
+         path: "",
+         banner: "none",
+      },
+      main: {
+         label: "Development",
+         path: "main",
+         banner: "unreleased",
+         noIndex: true,
+      },
+      // ...
+   ```
+
+   First identify any previous series whose security support period has ended, and change their `banner` entries from `"none"` to `"unmaintained"`. (Updating this only when we publish a new release means that we'll lag behind slightly in marking earlier series as being unmaintained, which we accept on the assumption that a new release series should typically arrive less than two months after an existing one has reached end-of-life.)
+
+   Then remove the " (beta)" suffix from the newly-stable series' label, change the `banner` property to `"none"`, and change the `current` entry to refer to the new series:
+
+   ```js
+      // ...
+      "v1.7": {
+         label: "1.7.x",
+         path: "v1.7",
+         banner: "none",
+      },
+      "v1.8": {
+         label: "1.8.x",
+         path: "v1.8",
+         banner: "none",
+      },
+      current: {
+         label: "1.8.x",
+         path: "",
+         banner: "none",
+      },
+      main: {
+         label: "Development",
+         path: "main",
+         banner: "unreleased",
+         noIndex: true,
+      },
+      // ...
+   ```
+2. Still in `docusaurus.config.ts`, find the `lastVersion` property that's a sibling of the `versions` property you edited in the previous step.
+
+    Change the value of that property to match the key used to identify the version you've just modified under `versions`, such as `"v1.8"`. This setting controls which version is identified as the "latest version" in the warning callout at the top of all pages belonging to versions whose banner is set to either `"unreleased"` or `"unmaintained"`.
+3. Still in `docusaurus.config.ts`, find the `navbar` property which includes an item whose label is "Docs" and whose nested items describe the navigation links for different versions, like this:
+   ```js
+   // ...
+   {
+      label: "v1.6.x",
+      href: "/docs/v1.6/",
+   },
+   {
+      label: "v1.8.x (beta)",
+      href: "/docs/v1.8/",
+   },
+   {
+      label: "Development",
+      href: "/docs/main/",
+   },
+   // ...
+   ```
+
+   First delete the objects for any series whose `banner` was changed to `"unmantained"` in the previous step. We preserve the old version doc pages to avoid breaking incoming links, but we only list the currently-supported series in the main navigation bar to prevent it from being cluttered with a growing set of end-of-life releases.
+
+   Then move the entry that was previously added for the new series (`v1.8.x (beta)` in this example) to the top of the list and remove the ` (beta)` suffix from its label.
+4. Follow the [Git submodule update](#website-submodule-update) steps to change the submodule to refer to the same commit as the `v1.8.0` tag in the `opentofu/opentofu` repository, but don't commit the change yet until finishing this set of steps.
+5. Recreate the `docs` symlink in the root of the repository so that it refers to the submodule directory for the newly-stable release series:
+   ```shell
+   rm docs
+   ln -s opentofu-repo/v1.8/website/docs docs
+   ```
+
+After following these instructions you should be able to launch the local dev server for the website by running `docker compose up --build` and find that the link for the new release series is the first item in the dropdown menu under "Docs" in the top navigation bar. Following that link should lead to the documentation for the new series, without any alert boxes warning that it is unreleased or unmaintained.
+
+If everything looks good then commit all of these changes and open a PR in the `opentofu.org` repository.
+
+</details>
 
 ---
 
-## Updating govulncheck github workflow (only for stable releases)
-In [.github/workflows/govulncheck.yml](.github/workflows/govulncheck.yml), there is a matrix with the actively
-maintained versions of OpenTofu.
-When the new branch for the stable version is created, update the matrix above by adding the new branch and removing the deprecated version.
+## GitHub milestones
+
+If you are publishing a _stable_ release (not a beta or release candidate), update the GitHub milestones in the `opentofu/opentofu` repository as follows:
+
+* Close the milestone whose name matches the release you've just published.
+* Create a milestone for the next patch release in the same series, if it doesn't already exist. For example, if you just closed a "v1.8.0" milestone then create "v1.8.1`.
+
+   **Exception:** If you've just published what is expected to be the final patch release in its series (because the end-of-life date is imminent or already passed) then don't create a new milestone in that series.
+
+For the first release in a new series we use the same milestone continuously for its beta releases, release candidates, and final release, so we should _not_ close e.g. the v1.8.0 milestone when v1.8.0-beta1 is released.
+
+The milestone for the first release in a new series (e.g. v1.9.0 relative to v1.8.0) will typically have been created at some point during the previous development period as a place to drop any issues that we decide to no longer treat as release blockers, but if not then we should create the v1.9.0 milestone when closing the v1.8.0 milestone, in addition to creating the v1.8.1 milestone as described above.
+
+---
+
+## Updating govulncheck github workflow
+
+In [.github/workflows/govulncheck.yml](.github/workflows/govulncheck.yml), there is a matrix with the actively maintained versions of OpenTofu.
+
+During each release:
+
+- If starting a new release series, add its maintenence branch to the matrix.
+- If any earlier series has reached end-of-life since the previous release, remove its maintenence branch from the list.
+
+---
 
 ## Testing the release
 
