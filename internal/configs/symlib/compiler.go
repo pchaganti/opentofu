@@ -201,7 +201,7 @@ func CompileLibrary(files []*SymbolFile, loader Loader, builtinFuncs map[string]
 		if language.Edition != "experimental2026" {
 			diags = append(diags, &hcl.Diagnostic{
 				Severity: hcl.DiagError,
-				Summary:  "Invalid langauge edition",
+				Summary:  "Invalid language edition",
 				Detail:   "The only valid symbol library language edition is \"experimental2026\"",
 				Subject:  &language.DeclRange,
 			})
@@ -231,6 +231,8 @@ func CompileLibrary(files []*SymbolFile, loader Loader, builtinFuncs map[string]
 		diags = diags.Extend(fDiags)
 		lib.functions[name] = f.ForExternalCaller()
 	}
+
+	diags = DecompactFunctionErrors(diags)
 
 	return lib, diags
 }

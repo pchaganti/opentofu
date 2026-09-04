@@ -8,6 +8,7 @@ package symlib
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/apparentlymart/go-workgraph/workgraph"
 	"github.com/hashicorp/hcl/v2"
@@ -252,9 +253,9 @@ func (fn *Function) Compile(w *workgraph.Worker, libScope *symbolScope) (functio
 			w := wf()
 
 			callName := TypeSymbols + "::" + fn.Name
-			for _, entry := range stack {
+			for i, entry := range stack {
 				if entry == callName {
-					return cty.NilVal, fmt.Errorf("Recursive call to %s detected", callName)
+					return cty.NilVal, fmt.Errorf("Recursive call to %s detected, call stack: %s", callName, strings.Join(append(stack[i:], callName+"()"), "() -> "))
 				}
 			}
 			stack = append(stack, callName)
@@ -335,6 +336,10 @@ func (fn *Function) Compile(w *workgraph.Worker, libScope *symbolScope) (functio
 			hclCtx, hDiags := hclContext(w, funcScope, fn.Return, stack)
 			diags = diags.Extend(hDiags)
 
+			if diags.HasErrors() {
+				return cty.NilVal, error(diags)
+			}
+
 			val, vDiags := fn.Return.Value(hclCtx)
 			diags = diags.Extend(vDiags)
 
@@ -388,4 +393,40 @@ var functionBlockSchema = &hcl.BodySchema{
 		},
 		{Type: "locals"},
 	},
+}
+
+type diagStackEntry struct {
+	*hcl.Diagnostic
+	hclsyntax.FunctionCallDiagExtra
+}
+
+func nestedFunctionErrorDiags(diag *hcl.Diagnostic, stack []diagStackEntry) hcl.Diagnostics {
+	if funcExtra, ok := hcl.DiagnosticExtra[hclsyntax.FunctionCallDiagExtra](diag); ok {
+		err := funcExtra.FunctionCallError()
+		if moreDiags, ok := err.(hcl.Diagnostics); ok {
+			// Continue nesting
+			stack = append(stack, diagStackEntry{diag, funcExtra})
+			var diags hcl.Diagnostics
+			for _, ndiag := range moreDiags {
+				diags = diags.Extend(nestedFunctionErrorDiags(ndiag, stack))
+			}
+			return diags
+		}
+	}
+	if len(stack) > 0 {
+		diag.Detail += "\n\nCalled from: \n"
+		for _, entry := range stack {
+			diag.Detail += fmt.Sprintf("  - %s() at %s\n", entry.CalledFunctionName(), entry.Subject.String())
+		}
+	}
+
+	return hcl.Diagnostics{diag}
+}
+
+func DecompactFunctionErrors(diags hcl.Diagnostics) hcl.Diagnostics {
+	var out hcl.Diagnostics
+	for _, diag := range diags {
+		out = out.Extend(nestedFunctionErrorDiags(diag, nil))
+	}
+	return out
 }
