@@ -7,7 +7,6 @@ package tofu2024
 
 import (
 	"context"
-	"fmt"
 	"iter"
 	"maps"
 
@@ -140,24 +139,7 @@ func (c *CompiledModuleInstance) ResourceInstanceObjectMeta(ctx context.Context,
 	// methods because our caller is expected to collect them separately
 	// using [CompiledModuleInstance.CheckAll].
 
-	preventDestroyVal, _, _ := rsrc.PreventDestroy(ctx)
-	preventDestroy, _ := exprs.DeriveFromValue(preventDestroyVal, func(v cty.Value) (bool, error) {
-		if v.Type() != cty.Bool {
-			// Getting here suggests a bug in [configgraph.Resource.PreventDestroy].
-			// TODO: Consider changing configgraph.Resource.PreventDestroy
-			// to directly return exprs.FromValue[bool] itself, since it
-			// shouldn't be returning anything that can't represent anyway.
-			panic(fmt.Sprintf("value for PreventDestroy is %#v, but cty.Bool is required", v))
-		}
-		if v.True() {
-			return true, nil
-		}
-		if v.False() {
-			return false, nil
-		}
-		// No other value is expected, based on the documentation of [configgraph.Resource.PreventDestroy].
-		panic(fmt.Sprintf("method PreventDestroy for %s returned unexpected value %#v", addr.InstanceAddr.Resource, v))
-	})
+	preventDestroy, _, _ := rsrc.PreventDestroy(ctx)
 	ret.DeletionInvalid = preventDestroy
 
 	destroyProvisioners := rsrc.DestroyProvisioners(ctx, addr.InstanceAddr)
@@ -171,22 +153,12 @@ func (c *CompiledModuleInstance) ResourceInstanceObjectMeta(ctx context.Context,
 		return ret
 	}
 
-	// TODO: Should CreateBeforeDestroy actually be modeled as a resource-level
+	// TODO: Should ReplaceOrder actually be modeled as a resource-level
 	// setting rather than an instance-level setting? For now assuming not
 	// because for non-desired objects we'll use the value from the prior state
 	// instead anyway, but we should check whether the old runtime let the
 	// resource-level config "win" for an orphaned resource instance.
-	cbdVal, _, _ := inst.CreateBeforeDestroy(ctx)
-	ret.CreateBeforeDelete, _ = exprs.DeriveFromValue(cbdVal, func(v cty.Value) (bool, error) {
-		if v.Type() != cty.Bool {
-			// Getting here suggests a bug in [configgraph.ResourceInstance.CreateBeforeDestroy].
-			// TODO: Consider changing configgraph.ResourceInstance.CreateBeforeDestroy
-			// to directly return exprs.FromValue[bool] itself, since it
-			// shouldn't be returning anything that can't represent anyway.
-			panic(fmt.Sprintf("value for CreateBeforeDestroy is %#v, but cty.Bool is required", v))
-		}
-		return cbdVal.True(), nil
-	})
+	ret.ReplaceOrder, _, _ = inst.ReplaceOrder(ctx)
 
 	providerInst, _ := inst.ProviderInstance(ctx)
 	ret.ProviderInstance, _ = providerInst.Derive(func(providerInst *configgraph.ProviderInstance) (*addrs.AbsProviderInstanceCorrect, error) {
