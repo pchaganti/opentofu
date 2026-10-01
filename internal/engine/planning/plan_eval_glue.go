@@ -32,11 +32,66 @@ import (
 // The methods of this type can all be called concurrently with themselves and
 // each other, so they must use appropriate synchronization to avoid races.
 type planGlue struct {
-	planCtx *planContext
-	oracle  *eval.PlanningOracle
+	planCtx  *planContext
+	oracle   *eval.PlanningOracle
+	targets  addrs.Set[addrs.Targetable]
+	excludes addrs.Set[addrs.Targetable]
+
+	allResourcesDeferred bool
 }
 
 var _ eval.PlanGlue = (*planGlue)(nil)
+
+func (p *planGlue) isTargeting() bool {
+	return len(p.targets) != 0
+}
+func (p *planGlue) isTargeted(addr addrs.Targetable) bool {
+	return !p.isTargeting() || p.targets.HasFunc(func(targeter addrs.Targetable) bool { return targeter.TargetContains(addr) })
+}
+
+func (p *planGlue) isExcluding() bool {
+	return len(p.excludes) != 0
+}
+func (p *planGlue) isExcluded(addr addrs.Targetable) bool {
+	return p.excludes.HasFunc(func(excluder addrs.Targetable) bool { return excluder.TargetContains(addr) })
+}
+
+func (p *planGlue) PreProcess(ctx context.Context, targeter func(target addrs.Targetable)) {
+	if !p.isTargeting() {
+		// Nop
+		return
+	}
+
+	allStateResources := p.planCtx.prevRoundState.AllResourceInstanceObjectAddrs()
+
+	// This is not concurrency safe, though each step within is safe
+	for _, target := range p.targets {
+		log.Printf("[TRACE] Processing target %s", target)
+		// Force config compilation and evaluation of targeted resources
+		targeter(target)
+
+		// Also locate applicable state entries and check for moves
+		// This ensures that orphaned resources that are targeted and moved
+		// hit the appropriate error conditions.
+		for _, entry := range allStateResources {
+			if p.planCtx.recordedMoves.Has(entry.Instance) {
+				// Already processed
+				continue
+			}
+			if target.TargetContains(entry.Instance) {
+				// Check for applicable move
+				movedToConfigAddr, _ := p.locateConfigForState(ctx, entry.Instance, true)
+				if movedToConfigAddr != nil {
+					log.Printf("[TRACE] Processing additional target from state %s", *movedToConfigAddr)
+					targeter(*movedToConfigAddr)
+				}
+			}
+		}
+	}
+	log.Printf("[TRACE] Completed targeting")
+
+	p.allResourcesDeferred = true
+}
 
 // PlanDesiredResourceInstance implements eval.PlanGlue.
 //
@@ -65,12 +120,36 @@ func (p *planGlue) PlanDesiredResourceInstance(ctx context.Context, inst *eval.D
 		diags = diags.Append(fmt.Errorf("the planning engine does not support %s; this is a bug in OpenTofu", mode))
 		return cty.DynamicVal, diags
 	}
-	p.planCtx.resourceInstObjs.Put(obj)
-	return obj.ResultValue(), diags
+	rv := obj.ResultValue()
+	if !isDeferredVal(rv) {
+		p.planCtx.resourceInstObjs.Put(obj)
+	}
+	return rv, diags
 }
 
 func (p *planGlue) planOrphanResourceInstance(ctx context.Context, addr addrs.AbsResourceInstance, state *states.ResourceInstanceObjectFullSrc) tfdiags.Diagnostics {
 	log.Printf("[TRACE] planContext: planning orphan resource instance %s", addr)
+
+	if p.isTargeting() {
+		// NOTE: this is broken if A -> B, both are orphaned, B is targeted. A will not be targeted and have a broken dependency.
+		// This *MATCHES* the existing strangeness of the original engine.
+		// Given that fixing it will be non-trivial, we are deferring this until this engine is adopted and stable.
+		if !p.isTargeted(addr) {
+			log.Printf("[TRACE] planContext: resource instance %s not targeted", addr)
+
+			return nil
+		}
+	}
+	if p.isExcluding() {
+		// NOTE this is broken if A -> B, both are orphaned, A is excluded. A will have a broken dependency.
+		// This *MATCHES* the existing strangeness of the original engine.
+		// Given that fixing it will be non-trivial, we are deferring this until this engine is adopted and stable.
+		if p.isExcluded(addr) {
+			log.Printf("[TRACE] planContext: resource instance %s excluded", addr)
+			return nil
+		}
+	}
+
 	var obj *resourceInstanceObject
 	var diags tfdiags.Diagnostics
 	switch mode := addr.Resource.Resource.Mode; mode {
@@ -349,6 +428,18 @@ func (p *planGlue) providerClient(ctx context.Context, addr addrs.AbsProviderIns
 }
 
 func (p *planGlue) desiredResourceInstanceMustBeDeferred(inst *eval.DesiredResourceInstance, meta *exec.ResourceInstanceObjectMeta) bool {
+	// Set during targeting after initial targets have been resolved
+	if p.allResourcesDeferred {
+		log.Printf("[TRACE] Deferring untargeted %s", inst.Addr)
+		return true
+	}
+
+	// If the resource is excluded, handle it as such
+	if p.isExcluded(inst.Addr) {
+		log.Printf("[TRACE] Deferring excluded %s", inst.Addr)
+		return true
+	}
+
 	// There are various reasons why we might need to defer final planning
 	// of this to a later round. The following is not exhaustive but is a
 	// placeholder to show where deferral might fit in.
