@@ -9,7 +9,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/apparentlymart/go-workgraph/workgraph"
 	"github.com/hashicorp/hcl/v2"
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/convert"
@@ -33,6 +32,13 @@ type Resource struct {
 	// itself a placeholder for zero or more resources whose existence
 	// and addresses we cannot determine yet.
 	Addr addrs.AbsResource
+
+	// Provider is the provider that this resource's type belongs to. This
+	// is the provider to use when asking for config validation, etc.
+	//
+	// Each instance of the resource is required to have the same provider,
+	// but they are allowed to use different instances of that provider.
+	Provider addrs.Provider
 
 	// InstanceSelector represents a rule for deciding which instances of
 	// this resource have been declared.
@@ -134,7 +140,7 @@ func (r *Resource) ValueSourceRange() *tfdiags.SourceRange {
 func (r *Resource) decideInstances(ctx context.Context) (*compiledInstances[*ResourceInstance], tfdiags.Diagnostics) {
 	return r.instancesResult.Do(ctx, func(ctx context.Context) (*compiledInstances[*ResourceInstance], tfdiags.Diagnostics) {
 		return compileInstances(ctx, r.InstanceSelector, r.CompileResourceInstance)
-	})
+	}, &r.DeclRange, "Decide instances of %s", r.Addr)
 }
 
 // PreventDestroy returns a value-based representation of the "prevent destroy"
@@ -269,30 +275,4 @@ func (r *Resource) CheckAll(ctx context.Context) tfdiags.Diagnostics {
 		cg.CheckValuer(ctx, r.PreventDestroyValuer)
 	}
 	return cg.Complete(ctx)
-}
-
-func (r *Resource) AnnounceAllGraphevalRequests(announce func(workgraph.RequestID, grapheval.RequestInfo)) {
-	// There might be other grapheval requests in our dynamic instances, but
-	// they are hidden behind another request themselves so we'll try to
-	// report them only if that request was already started.
-	instancesReqId := r.instancesResult.RequestID()
-	if instancesReqId == workgraph.NoRequest {
-		return
-	}
-	announce(instancesReqId, grapheval.RequestInfo{
-		Name:        fmt.Sprintf("decide instances for %s", r.Addr),
-		SourceRange: r.InstanceSelector.InstancesSourceRange(),
-	})
-	if r.PreventDestroyValuer != nil {
-		announce(r.PreventDestroyValuer.RequestID(), grapheval.RequestInfo{
-			Name:        fmt.Sprintf("prevent_destroy argument for %s", r.Addr),
-			SourceRange: r.PreventDestroyValuer.ValueSourceRange(),
-		})
-	}
-	// The Instances method potentially starts a new request, but we already
-	// confirmed above that this request was already started and so we
-	// can safely just await its result here.
-	for _, inst := range r.Instances(grapheval.ContextWithNewWorker(context.Background())) {
-		inst.AnnounceAllGraphevalRequests(announce)
-	}
 }
