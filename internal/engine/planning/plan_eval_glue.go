@@ -192,8 +192,6 @@ func (p *planGlue) Finalize(ctx context.Context) (*planContextResult, tfdiags.Di
 
 	diags = diags.Append(p.validateForceReplace())
 
-	diags = diags.Append(p.planCtx.CheckPreventDestroy(ctx, p.oracle))
-
 	diags = diags.Append(p.oracle.Close(ctx))
 
 	intermediate, moreDiags := p.planCtx.Close(ctx)

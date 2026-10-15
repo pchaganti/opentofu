@@ -145,18 +145,11 @@ func (r *Resource) decideInstances(ctx context.Context) (*compiledInstances[*Res
 
 // PreventDestroy returns a value-based representation of the "prevent destroy"
 // setting for this resource.
-//
-// The result is guaranteed to be a [cty.Bool] value, but it could potentially
-// be unknown or marked and it's the caller's responsibility to handle those
-// situations.
-//
-// The different possible known boolean results have the following meaning:
 //   - true means that this resource instance MUST NOT be destroyed.
 //   - false means that this resource instance MAY be destroyed.
-func (r *Resource) PreventDestroy(ctx context.Context) (exprs.FromValue[bool], *tfdiags.SourceRange, tfdiags.Diagnostics) {
-	ctx = withDebugAddr(ctx, r.Addr, "PreventDestroy")
+func (r *Resource) PreventDestroy(ctx context.Context) (exprs.WithSourceRange[bool], tfdiags.Diagnostics) {
 	if r.PreventDestroyValuer == nil {
-		return exprs.Known(false), nil, nil
+		return exprs.WithSourceRange[bool]{FromValue: exprs.Known(false)}, nil
 	}
 	rng := r.PreventDestroyValuer.ValueSourceRange()
 
@@ -180,7 +173,7 @@ func (r *Resource) PreventDestroy(ctx context.Context) (exprs.FromValue[bool], *
 			),
 			Subject: rng.ToHCL().Ptr(),
 		})
-		return exprs.Unknown[bool](), rng, diags
+		return exprs.WithSourceRange[bool]{FromValue: exprs.Unknown[bool](), SourceRange: rng}, diags
 	}
 	// TODO deprecated handling
 	//preventDestroyVal, moreDiags := marks.ExtractDeprecatedDiagnosticsWithExpr(preventDestroyVal, preventDestroyExpr)
@@ -254,7 +247,7 @@ func (r *Resource) PreventDestroy(ctx context.Context) (exprs.FromValue[bool], *
 	ret, _ := exprs.DeriveFromValue(preventDestroyVal, func(v cty.Value) (bool, error) {
 		return v.True(), nil
 	})
-	return ret, rng, diags
+	return exprs.WithSourceRange[bool]{FromValue: ret, SourceRange: rng}, diags
 }
 
 // CheckAll implements allChecker.
@@ -272,7 +265,10 @@ func (r *Resource) CheckAll(ctx context.Context) tfdiags.Diagnostics {
 	// (e.g. this is where an invalid for_each expression would be reported)
 	cg.CheckValuer(ctx, r)
 	if r.PreventDestroyValuer != nil {
-		cg.CheckValuer(ctx, r.PreventDestroyValuer)
+		cg.CheckDiagsFunc(ctx, func(ctx context.Context) tfdiags.Diagnostics {
+			_, diags := r.PreventDestroy(ctx)
+			return diags
+		})
 	}
 	return cg.Complete(ctx)
 }

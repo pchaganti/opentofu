@@ -9,6 +9,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"slices"
 	"strings"
 
 	"github.com/opentofu/opentofu/internal/addrs"
@@ -37,6 +38,8 @@ type PlanOpts struct {
 	// just change specific details of how we plan, a different planning mode
 	// has a far more drastic, cross-cutting effect.
 	Mode plans.Mode
+
+	SkipRefresh bool
 
 	ForceReplace []addrs.AbsResourceInstance
 
@@ -90,6 +93,48 @@ func PlanChanges(ctx context.Context, opts *PlanOpts, prevRoundState *states.Sta
 func finalizePlan(ctx context.Context, intermediate *planContextResult, providers plugins.Providers) (*plans.Plan, tfdiags.Diagnostics) {
 	var diags tfdiags.Diagnostics
 
+	// Collect all of the upgraded and refreshed stateObjects
+	upgradedStateSync := intermediate.PrevRoundState.DeepCopy().SyncWrapper()
+	refreshedStateSync := intermediate.PrevRoundState.DeepCopy().SyncWrapper()
+
+	for _, obj := range intermediate.ResourceInstanceObjects.All() {
+		writeAddr := obj.PrevRoundAddr
+		if obj.UpgradedState != nil {
+			upgradedStateSync.SetResourceInstanceObjectFull(writeAddr, obj.UpgradedState)
+		}
+		if obj.RefreshedState != nil {
+			// There are some weird quirks in the old runtime that we are replicating here
+			// See TestApply_updateDependencies / 7964328f345 for more information
+			// Long term, we may be able to get rid of this workaround as the new runtime
+			// takes on more responsibilities.
+			var dependencies addrs.Set[addrs.AbsResourceInstance]
+			var configDependencies addrs.Set[addrs.ConfigResource]
+
+			if obj.PlannedChange != nil && obj.PlannedChange.Action != plans.NoOp {
+				// Include config dependencies in prevState
+				dependencies = addrs.MakeSet(obj.RefreshedState.Dependencies...)
+				configDependencies = addrs.MakeSet(obj.RefreshedState.ConfigDependencies...)
+			} else {
+				dependencies = addrs.MakeSet[addrs.AbsResourceInstance]()
+				configDependencies = addrs.MakeSet[addrs.ConfigResource]()
+			}
+
+			for dep := range obj.ConfigDependencies.All() {
+				dependencies.Add(dep.InstanceAddr)
+				configDependencies.Add(dep.InstanceAddr.ConfigResource())
+			}
+			obj.RefreshedState.Dependencies = slices.Collect(dependencies.All())
+			obj.RefreshedState.ConfigDependencies = slices.Collect(configDependencies.All())
+
+			refreshedStateSync.SetResourceInstanceObjectFull(writeAddr, obj.RefreshedState)
+		} else {
+			refreshedStateSync.RemoveResourceInstanceObjectFull(writeAddr, obj.ProviderInst)
+		}
+	}
+
+	upgradedState := upgradedStateSync.Close()
+	refreshedState := refreshedStateSync.Close()
+
 	effectiveReplaceOrders, selfDeps := findEffectiveReplaceOrders(intermediate.ResourceInstanceObjects)
 	if len(selfDeps) != 0 {
 		// TODO: _Should_ we return this error here? In principle we should only
@@ -140,7 +185,7 @@ func finalizePlan(ctx context.Context, intermediate *planContextResult, provider
 
 			var existingDeposed map[addrs.DeposedKey]*states.ResourceInstanceObjectSrc
 			newDeposed := newDeposedKeys.Get(instAddr)
-			inst := intermediate.RefreshedState.ResourceInstance(instAddr)
+			inst := refreshedState.ResourceInstance(instAddr)
 			if inst != nil {
 				existingDeposed = inst.Deposed
 			}
@@ -183,8 +228,8 @@ func finalizePlan(ctx context.Context, intermediate *planContextResult, provider
 	return &plans.Plan{
 		UIMode:       plans.NormalMode, // TODO: [PlanChanges] needs something analogous to [tofu.PlanOpts] for planning mode/options
 		Changes:      changes,
-		PrevRunState: intermediate.PrevRoundState,
-		PriorState:   intermediate.RefreshedState,
+		PrevRunState: upgradedState,
+		PriorState:   refreshedState,
 		// TODO: various other fields that we need to actually make use
 		// of this plan result. But this is intentionally just a partial
 		// result for now because it's not clear that we'd even be using

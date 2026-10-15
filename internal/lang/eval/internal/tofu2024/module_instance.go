@@ -108,6 +108,8 @@ func (c *CompiledModuleInstance) ResultValuer(ctx context.Context) exprs.Valuer 
 func (c *CompiledModuleInstance) ResourceInstanceObjectMeta(ctx context.Context, relativeModuleInst []addrs.ModuleInstanceStep, addr addrs.ResourceInstanceObject) *evalglue.ConfiguredResourceInstanceObjectMeta {
 	// Start with everything we know about the resource from the module context
 	var ret *evalglue.ConfiguredResourceInstanceObjectMeta
+	// We'll populate the Provider fields below only once we have
+	// a specific resource and resource instance in mind.
 
 	if len(c.moveStatements) != 0 {
 		if ret == nil {
@@ -146,11 +148,6 @@ func (c *CompiledModuleInstance) ResourceInstanceObjectMeta(ctx context.Context,
 		// derive these directly from the resource address.
 		ResourceMode: addr.InstanceAddr.Resource.Mode,
 		ResourceType: addr.InstanceAddr.Resource.Type,
-
-		// We'll populate the provider _instance_ to use only once we have
-		// a specific resource instance below, since the chosen provider
-		// instance is allowed to vary between resource instances.
-		Instance: nil,
 	}
 
 	ret.DeclRange = rsrc.DeclRange
@@ -160,7 +157,7 @@ func (c *CompiledModuleInstance) ResourceInstanceObjectMeta(ctx context.Context,
 	// methods because our caller is expected to collect them separately
 	// using [CompiledModuleInstance.CheckAll].
 
-	preventDestroy, _, _ := rsrc.PreventDestroy(ctx)
+	preventDestroy, _ := rsrc.PreventDestroy(ctx)
 	ret.DeletionInvalid = &preventDestroy
 
 	destroyProvisioners := rsrc.DestroyProvisioners(ctx, addr.InstanceAddr)
