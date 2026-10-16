@@ -141,6 +141,23 @@ func (p *planGlue) planDesiredManagedResourceInstance(
 		ret.ReplaceOrder = resources.ReplaceAnyOrder
 	}
 
+	prevStateInfo, moveDiags := p.locateStateForConfig(ctx, inst.Addr)
+	diags = diags.Append(moveDiags)
+	if diags.HasErrors() {
+		return ret, diags
+	}
+
+	if prevStateInfo.state == nil && p.planCtx.refreshOnly {
+		// Nothing to do here, improve the guess and return
+		schema, moreDiags := p.planCtx.providers.ResourceTypeSchema(ctx, meta.Provider, inst.Addr.Resource.Resource.Mode, inst.Addr.Resource.Resource.Type)
+		diags = diags.Append(moreDiags)
+		if diags.HasErrors() {
+			return ret, diags
+		}
+		ret.PlaceholderValue = cty.UnknownVal(schema.Block.ImpliedType())
+		return ret, diags
+	}
+
 	resourceType, providerInst, moreDiags := p.managedResourceType(ctx, meta)
 	diags = diags.Append(moreDiags)
 	if diags.HasErrors() {
@@ -171,12 +188,6 @@ func (p *planGlue) planDesiredManagedResourceInstance(
 
 	validateDiags = p.planCtx.providers.ValidateResourceConfig(ctx, meta.Provider, addrs.ManagedResourceMode, meta.ResourceType, unmarkedConfigVal)
 	diags = diags.Append(validateDiags)
-	if diags.HasErrors() {
-		return ret, diags
-	}
-
-	prevStateInfo, moveDiags := p.locateStateForConfig(ctx, inst.Addr)
-	diags = diags.Append(moveDiags)
 	if diags.HasErrors() {
 		return ret, diags
 	}
@@ -234,6 +245,13 @@ func (p *planGlue) planDesiredManagedResourceInstance(
 			// Improve what we know about the potential value
 			ret.PlaceholderValue = prevState.Value
 		}
+	}
+
+	if p.planCtx.refreshOnly {
+		if ret.PlaceholderValue.IsNull() {
+			ret.PlaceholderValue = cty.UnknownVal(ret.PlaceholderValue.Type())
+		}
+		return ret, diags
 	}
 
 	// Our best guess as to what the current value is (probably cty.NullVal)
@@ -578,6 +596,13 @@ func (p *planGlue) planUnwantedManagedResourceInstanceObject(
 	if prevState.Value.IsNull() {
 		// The orphan object seems to have already been deleted outside of
 		// OpenTofu, so we've got nothing more to do here.
+		return ret, diags
+	}
+
+	if p.planCtx.refreshOnly {
+		// TODO: We may still want to produce a NoOp Change in this scenario, it depends
+		// on what the expectations are for refresh only plans as we get deeper into
+		// integration and e2e testing
 		return ret, diags
 	}
 
