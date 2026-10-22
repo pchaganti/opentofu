@@ -148,9 +148,16 @@ type ResourceProvisioner struct {
 
 type ImportStatement struct {
 	Addr      addrs.AbsResourceInstance
-	DeclRange tfdiags.SourceRange
+	DeclRange *tfdiags.SourceRange
 	ID        string
 	Identity  cty.Value
+}
+
+// FromConfig determines if this ImportStatement came from configuration
+// or from the command line. For now, DeclRange is only set from the command
+// line and not to the target resources config location for clarity.
+func (is *ImportStatement) FromConfig() bool {
+	return is.DeclRange != nil
 }
 
 // ResourceProvisionerConfig represents the fully-evaluated configuration for
