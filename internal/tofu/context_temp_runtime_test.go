@@ -79,13 +79,13 @@ var (
 	ExperimentalBugCancel            = ExperimentalFlag{"Bug Context Cancel", false}
 	ExperimentalBugStateCBD          = ExperimentalFlag{"Bug CreateBeforeDestroy Not Tracked In State", false}
 	ExperimentalBugStateUpdateHook   = ExperimentalFlag{"Bug State Update Hook", false}
-	ExperimentalBugMissingResource   = ExperimentalFlag{"Bug Missing Configuration For Resource Instance", false}
-	ExperimentalBugResourceReadNull  = ExperimentalFlag{"Bug Read Resource Deleted", false}
+	ExperimentalBugMissingResource   = ExperimentalFlag{"Bug Missing Configuration For Resource Instance", true}
+	ExperimentalBugResourceReadNull  = ExperimentalFlag{"Bug Read Resource Deleted", true}
 	ExperimentalBugDataResource      = ExperimentalFlag{"Bug Data Resource", false}
 	ExperimentalBugResourceMarks     = ExperimentalFlag{"Bug Not Transferring Marks from Resource Instance Config Value to Final Value", false}
 	ExperimentalBugTaintOnCreateFail = ExperimentalFlag{"Bug Not Tainted When Create Fails", false}
-	ExperimentalBugProviderPrivate   = ExperimentalFlag{"Bug Provider Private Data Not Preserved", false}
-	ExperimentalBugCircularReference = ExperimentalFlag{"Bug Circular Reference", false}
+	ExperimentalBugProviderPrivate   = ExperimentalFlag{"Bug Provider Private Data Not Preserved", true}
+	ExperimentalBugCircularReference = ExperimentalFlag{"Bug Circular Reference", true}
 
 	ExperimentalChangeDiagWording     = ExperimentalFlag{"Change Different Diagnostic Wording", false}
 	ExperimentalChangeErrorEarly      = ExperimentalFlag{"Change Detect Error Earlier", false}
@@ -103,10 +103,10 @@ var (
 	ExperimentalFeatureCondition       = ExperimentalFlag{"Missing Pre/Post Conditions", false}
 	ExperimentalFeatureLocalState      = ExperimentalFlag{"Missing Store locals in state", false}
 	ExperimentalFeatureChecks          = ExperimentalFlag{"Missing Checks", false}
-	ExperimentalFeatureChanges         = ExperimentalFlag{"Missing Plan Changes", false}
+	ExperimentalFeatureChanges         = ExperimentalFlag{"Missing Plan Changes", true}
 	ExperimentalFeatureDeprecated      = ExperimentalFlag{"Missing Deprecated", false}
 	ExperimentalFeatureImport          = ExperimentalFlag{"Missing Importing", true}
-	ExperimentalFeatureImportGenConfig = ExperimentalFlag{"Missing Import GenConfig", false}
+	ExperimentalFeatureImportGenConfig = ExperimentalFlag{"Missing Import GenConfig", true}
 	ExperimentalFeatureLinting         = ExperimentalFlag{"Missing Linting", false}
 	ExperimentalFeatureRefresh         = ExperimentalFlag{"Missing Refresh", true}
 	ExperimentalFeatureRefreshOnly     = ExperimentalFlag{"Missing Refresh-only Planning Mode", true}
@@ -119,7 +119,6 @@ var (
 	ExperimentalFeaturePlannedState    = ExperimentalFlag{"Missing Planned State", false}
 	ExperimentalFeatureSensitivity     = ExperimentalFlag{"Missing Sensitivity Handling", false}
 	ExperimentalFeatureSelfReference   = ExperimentalFlag{"Missing Self Reference", false}
-	ExperimentalFeatureProviderMeta    = ExperimentalFlag{"Missing Provider Meta", false}
 	ExperimentalFeatureTaint           = ExperimentalFlag{"Missing Taint", false}
 	ExperimentalFeatureErrorHandling   = ExperimentalFlag{"Missing Error Handling", false}
 	ExperimentalFeatureProviderInput   = ExperimentalFlag{"Missing Provider Input Prompting", false}

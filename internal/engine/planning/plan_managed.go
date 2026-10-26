@@ -189,19 +189,16 @@ func (p *planGlue) planDesiredManagedResourceInstance(
 		return ret, diags
 	}
 
-	validateDiags := resourceType.ValidateConfig(ctx, inst.ConfigVal)
-	diags = diags.Append(validateDiags)
-	if diags.HasErrors() {
-		return ret, diags
+	isGeneratingConfiguration := PlaceholderForGeneratedConfigImport.Type().Equals(inst.ConfigVal.Type())
+	if !isGeneratingConfiguration {
+		validateDiags := resourceType.ValidateConfig(ctx, inst.ConfigVal)
+		diags = diags.Append(validateDiags)
+		if diags.HasErrors() {
+			return ret, diags
+		}
 	}
 
 	unmarkedConfigVal, _ := inst.ConfigVal.UnmarkDeep()
-
-	validateDiags = p.planCtx.providers.ValidateResourceConfig(ctx, meta.Provider, addrs.ManagedResourceMode, meta.ResourceType, unmarkedConfigVal)
-	diags = diags.Append(validateDiags)
-	if diags.HasErrors() {
-		return ret, diags
-	}
 
 	var prevState *resources.ManagedResourceStateWithIdentity
 	if prevStateInfo.state != nil {
@@ -238,7 +235,6 @@ func (p *planGlue) planDesiredManagedResourceInstance(
 		ret.PlaceholderValue = prevState.Value
 	}
 
-	var planImport *plans.Importing
 	importing := !p.planCtx.skipImport && meta.ImportStatement != nil
 	if importing && prevState != nil {
 		if !meta.ImportStatement.FromConfig() {
@@ -253,6 +249,8 @@ func (p *planGlue) planDesiredManagedResourceInstance(
 		importing = false
 	}
 
+	var planImport *plans.Importing
+	var planGenConfig string
 	if importing {
 		prevState, ret.UpgradedState, moreDiags = processImport(
 			ctx,
@@ -267,6 +265,46 @@ func (p *planGlue) planDesiredManagedResourceInstance(
 		}
 		if prevState != nil {
 			ret.PlaceholderValue = prevState.Value
+
+			if isGeneratingConfiguration {
+				// Pretend the configuration always was the imported value.
+				unmarkedConfigVal = prevState.Value
+
+				planGenConfig, moreDiags = resourceType.GenerateConfigFor(ctx, prevState.Value, providerInst, inst.Addr)
+				diags = diags.Append(moreDiags)
+				if diags.HasErrors() {
+					return ret, diags
+				}
+
+				defer func() {
+					// A quirk of config generation is that we still need a planned change even in planning fails:
+					// TestContext2Plan_importResourceConfigGenWithError
+					if ret.PlannedChange != nil {
+						return
+					}
+					// Inject fallback planned change if we have exited without setting a planned change
+					ret.PlannedChange = &plans.ResourceInstanceChange{
+						Addr:        inst.Addr,
+						PrevRunAddr: prevStateInfo.from,
+						ProviderAddr: addrs.AbsProviderConfig{
+							// FIXME: This is a lossy shim to the old-style provider instance
+							// address representation, since our old models aren't yet updated
+							// to support the modern one. It cannot handle a provider config
+							// inside a module call that uses count or for_each.
+							Module:   providerInst.Config.Module.Module(),
+							Provider: providerInst.Config.Config.Provider,
+							Alias:    providerInst.Config.Config.Alias,
+						},
+
+						Importing:       planImport,
+						GeneratedConfig: planGenConfig,
+
+						Action: plans.Update,
+						Before: prevState.Value,
+						After:  prevState.Value,
+					}
+				}()
+			}
 
 			planImport = &plans.Importing{
 				ID:       meta.ImportStatement.ID,
@@ -292,6 +330,11 @@ func (p *planGlue) planDesiredManagedResourceInstance(
 		if prevState != nil {
 			// Improve what we know about the potential value
 			ret.PlaceholderValue = prevState.Value
+
+			if isGeneratingConfiguration {
+				// Pretend the configuration always was the refreshed value.
+				unmarkedConfigVal = prevState.Value
+			}
 		}
 
 		// verify the existence of the imported resource
@@ -327,14 +370,6 @@ func (p *planGlue) planDesiredManagedResourceInstance(
 		current = prevState.ValueWithPrivate
 	}
 
-	// TODO: ProviderMeta is a rarely-used feature that only really makes
-	// sense when the module and provider are both written by the same
-	// party and the module author is using the provider as a way to
-	// transport module usage telemetry. We should decide whether we want
-	// to keep supporting that, and if so design a way for the relevant
-	// meta value to get from the evaluator into here.
-	providerMetaValue := cty.NilVal
-
 	planChangesCtx := ctx
 	if cb := tracer.StartManagedResourceInstanceObjectPlanChanges; cb != nil {
 		planChangesCtx = cb(ctx, inst.Addr.CurrentObject(), current.Value, unmarkedConfigVal)
@@ -342,7 +377,6 @@ func (p *planGlue) planDesiredManagedResourceInstance(
 	planResp, planDiags := resourceType.PlanChanges(planChangesCtx, &resources.ManagedResourcePlanRequest{
 		Current:            current,
 		DesiredValue:       unmarkedConfigVal,
-		ProviderMetaValue:  providerMetaValue,
 		IgnoreChangesPaths: inst.IgnoreChangesPaths,
 	}, ret.Addr)
 	diags = diags.Append(planDiags)
@@ -416,8 +450,7 @@ func (p *planGlue) planDesiredManagedResourceInstance(
 		createPlanResp, planDiags := resourceType.PlanChanges(ctx, &resources.ManagedResourcePlanRequest{
 			// "Current" is intentionally not set here, because we're asking
 			// for a plan to create a new object matching the configuration.
-			DesiredValue:      unmarkedConfigVal,
-			ProviderMetaValue: providerMetaValue,
+			DesiredValue: unmarkedConfigVal,
 		}, ret.Addr)
 		diags = diags.Append(planDiags)
 		if planDiags.HasErrors() {
@@ -427,7 +460,6 @@ func (p *planGlue) planDesiredManagedResourceInstance(
 			Current: current,
 			// DesiredValue is intentionally not set here, because we're asking
 			// asking for a plan to just destroy what currently exists.
-			ProviderMetaValue: providerMetaValue,
 		}, ret.Addr)
 		diags = diags.Append(planDiags)
 		if planDiags.HasErrors() {
@@ -471,7 +503,8 @@ func (p *planGlue) planDesiredManagedResourceInstance(
 		Before:          planResp.Current.Value,
 		After:           planResp.Planned.Value,
 
-		Importing: planImport,
+		Importing:       planImport,
+		GeneratedConfig: planGenConfig,
 
 		// TODO: ActionReason, but need to figure out how to get the information
 		// we'd need for that into here since most of the reasons are
@@ -574,12 +607,12 @@ func (p *planGlue) planUnwantedManagedResourceInstanceObject(
 			return ret, diags
 		}
 	} else {
-		movedToAddr, movedDiags := p.locateConfigForState(ctx, currentRunAddr, addr.IsCurrent())
+		var movedDiags tfdiags.Diagnostics
+		movedToAddress, movedDiags = p.locateConfigForState(ctx, currentRunAddr, addr.IsCurrent())
 		diags = diags.Append(movedDiags)
 		if diags.HasErrors() {
 			return ret, diags
 		}
-		movedToAddress = movedToAddr
 	}
 	if movedToAddress != nil {
 		log.Printf("[TRACE] Orphaned resource %s is moved to %s", currentRunAddr, *movedToAddress)
@@ -678,14 +711,6 @@ func (p *planGlue) planUnwantedManagedResourceInstanceObject(
 	planResp, planDiags := resourceType.PlanChanges(ctx, &resources.ManagedResourcePlanRequest{
 		Current:      prevState.ValueWithPrivate,
 		DesiredValue: cty.NilVal, // we want to destroy this object
-
-		// TODO: ProviderMeta is a rarely-used feature that only really makes
-		// sense when the module and provider are both written by the same
-		// party and the module author is using the provider as a way to
-		// transport module usage telemetry. We should decide whether we want
-		// to keep supporting that, and if so design a way for the relevant
-		// meta value to get from the evaluator into here.
-		ProviderMetaValue: cty.NilVal,
 	}, addr)
 	diags = diags.Append(planDiags)
 	if planDiags.HasErrors() {

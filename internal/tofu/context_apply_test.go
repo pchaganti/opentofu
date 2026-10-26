@@ -1893,8 +1893,6 @@ func TestContext2Apply_destroyCrossProviders(t *testing.T) {
 }
 
 func getContextForApply_destroyCrossProviders(t *testing.T, m *configs.Config, providerFactories map[addrs.Provider]providers.Factory) (*Context, *configs.Config, *states.State) {
-	SkipExperimental(t, ExperimentalFlagUnknown)
-
 	state := states.NewState()
 	root := state.EnsureModule(addrs.RootModuleInstance)
 	root.SetResourceInstanceCurrent(
@@ -2379,8 +2377,6 @@ func TestContext2Apply_countDecreaseToOneX(t *testing.T) {
 // ignore the statement, in the same way as it would if an explicit move
 // statement specified the same situation.
 func TestContext2Apply_countDecreaseToOneCorrupted(t *testing.T) {
-	SkipExperimental(t, ExperimentalFlagUnknown)
-
 	m := testModule(t, "apply-count-dec-one")
 	p := testProvider("aws")
 	p.PlanResourceChangeFn = testDiffFn
@@ -2428,8 +2424,11 @@ func TestContext2Apply_countDecreaseToOneCorrupted(t *testing.T) {
 		if got, want := change.Action, plans.Delete; got != want {
 			t.Errorf("wrong action for instance zero %s; want %s", got, want)
 		}
-		if got, want := change.ActionReason, plans.ResourceInstanceDeleteBecauseWrongRepetition; got != want {
-			t.Errorf("wrong action reason for instance zero %s; want %s", got, want)
+		if !experimentalRuntimeEnabled() {
+			SkipExperimental(t, ExperimentalFeatureActionReason)
+			if got, want := change.ActionReason, plans.ResourceInstanceDeleteBecauseWrongRepetition; got != want {
+				t.Errorf("wrong action reason for instance zero %s; want %s", got, want)
+			}
 		}
 	}
 	{
@@ -2458,7 +2457,7 @@ func TestContext2Apply_countDecreaseToOneCorrupted(t *testing.T) {
 }
 
 func TestContext2Apply_countTainted(t *testing.T) {
-	SkipExperimental(t, ExperimentalFlagUnknown)
+	SkipExperimental(t, ExperimentalFeatureTaint)
 
 	m := testModule(t, "apply-count-tainted")
 	p := testProvider("aws")
@@ -3040,8 +3039,11 @@ func TestContext2Apply_moduleOrphanInheritAlias(t *testing.T) {
 		// This should ideally be ResourceInstanceDeleteBecauseNoModule, but
 		// the codepath deciding this doesn't currently have enough information
 		// to differentiate, and so this is a compromise.
-		if got, want := change.ActionReason, plans.ResourceInstanceDeleteBecauseNoResourceConfig; got != want {
-			t.Errorf("wrong action for %s %s; want %s", addr, got, want)
+		if !experimentalRuntimeEnabled() {
+			SkipExperimental(t, ExperimentalFeatureActionReason)
+			if got, want := change.ActionReason, plans.ResourceInstanceDeleteBecauseNoResourceConfig; got != want {
+				t.Errorf("wrong action for %s %s; want %s", addr, got, want)
+			}
 		}
 	}
 
@@ -3099,8 +3101,6 @@ func TestContext2Apply_moduleOrphanProvider(t *testing.T) {
 }
 
 func TestContext2Apply_moduleOrphanGrandchildProvider(t *testing.T) {
-	SkipExperimental(t, ExperimentalFlagUnknown)
-
 	m := testModule(t, "apply-module-orphan-provider-inherit")
 	p := testProvider("aws")
 	p.PlanResourceChangeFn = testDiffFn
@@ -3142,8 +3142,6 @@ func TestContext2Apply_moduleOrphanGrandchildProvider(t *testing.T) {
 }
 
 func TestContext2Apply_moduleGrandchildProvider(t *testing.T) {
-	SkipExperimental(t, ExperimentalFlagUnknown)
-
 	m := testModule(t, "apply-module-grandchild-provider-inherit")
 	p := testProvider("aws")
 	p.PlanResourceChangeFn = testDiffFn
@@ -4328,8 +4326,6 @@ func TestContext2Apply_multiVarMissingState(t *testing.T) {
 }
 
 func TestContext2Apply_outputOrphan(t *testing.T) {
-	SkipExperimental(t, ExperimentalFlagUnknown)
-
 	m := testModule(t, "apply-output-orphan")
 	p := testProvider("aws")
 	p.PlanResourceChangeFn = testDiffFn
@@ -4361,7 +4357,6 @@ func TestContext2Apply_outputOrphan(t *testing.T) {
 }
 
 func TestContext2Apply_outputOrphanModule(t *testing.T) {
-	SkipExperimental(t, ExperimentalFlagUnknown)
 
 	m := testModule(t, "apply-output-orphan-module")
 	p := testProvider("aws")
@@ -4398,6 +4393,8 @@ func TestContext2Apply_outputOrphanModule(t *testing.T) {
 	})
 
 	emptyConfig := configs.NewEmptyConfig()
+	// New runtime requires a dir
+	emptyConfig.Module.SourceDir = t.TempDir()
 
 	// NOTE: While updating this test to pass the state in as a Plan argument,
 	// rather than into the testContext2 call above, it previously said
@@ -4419,8 +4416,6 @@ func TestContext2Apply_outputOrphanModule(t *testing.T) {
 }
 
 func TestContext2Apply_providerComputedVar(t *testing.T) {
-	SkipExperimental(t, ExperimentalFlagUnknown)
-
 	m := testModule(t, "apply-provider-computed")
 	p := testProvider("aws")
 	p.PlanResourceChangeFn = testDiffFn
@@ -4454,8 +4449,6 @@ func TestContext2Apply_providerComputedVar(t *testing.T) {
 }
 
 func TestContext2Apply_providerConfigureDisabled(t *testing.T) {
-	SkipExperimental(t, ExperimentalFlagUnknown)
-
 	m := testModule(t, "apply-provider-configure-disabled")
 	p := testProvider("aws")
 	p.PlanResourceChangeFn = testDiffFn
@@ -6420,7 +6413,7 @@ func TestContext2Apply_destroyWithModuleVariableAndCountNested(t *testing.T) {
 }
 
 func TestContext2Apply_destroyOutputs(t *testing.T) {
-	SkipExperimental(t, ExperimentalBugMissingResource)
+	SkipExperimental(t, ExperimentalBugDataResource)
 
 	m := testModule(t, "apply-destroy-outputs")
 	p := testProvider("test")
@@ -6488,8 +6481,6 @@ func TestContext2Apply_destroyOutputs(t *testing.T) {
 }
 
 func TestContext2Apply_destroyOrphan(t *testing.T) {
-	SkipExperimental(t, ExperimentalFlagUnknown)
-
 	m := testModule(t, "apply-error")
 	p := testProvider("aws")
 	state := states.NewState()
@@ -8353,7 +8344,6 @@ func TestContext2Apply_createBefore_depends(t *testing.T) {
 }
 
 func TestContext2Apply_singleDestroy(t *testing.T) {
-	SkipExperimental(t, ExperimentalFlagUnknown)
 	m := testModule(t, "apply-depends-create-before")
 	h := new(HookRecordApplyOrder)
 	p := testProvider("aws")
@@ -8455,8 +8445,6 @@ func TestContext2Apply_singleDestroy(t *testing.T) {
 
 // GH-7824
 func TestContext2Apply_issue7824(t *testing.T) {
-	SkipExperimental(t, ExperimentalFlagUnknown)
-
 	p := testProvider("template")
 	p.PlanResourceChangeFn = testDiffFn
 	p.GetProviderSchemaResponse = getProviderSchemaResponseFromProviderSchema(&ProviderSchema{
@@ -9853,7 +9841,7 @@ func TestContext2Apply_invalidIndexRef(t *testing.T) {
 }
 
 func TestContext2Apply_moduleReplaceCycle(t *testing.T) {
-	SkipExperimental(t, ExperimentalFlagUnknown)
+	SkipExperimental(t, ExperimentalNewStrategyNeeded)
 
 	for _, mode := range []string{"normal", "cbd"} {
 		var m *configs.Config
@@ -10008,7 +9996,7 @@ func TestContext2Apply_moduleReplaceCycle(t *testing.T) {
 }
 
 func TestContext2Apply_destroyDataCycle(t *testing.T) {
-	SkipExperimental(t, ExperimentalFlagUnknown)
+	SkipExperimental(t, ExperimentalBugDataResource)
 
 	m, snap := testModuleWithSnapshot(t, "apply-destroy-data-cycle")
 	p := testProvider("null")
@@ -10362,8 +10350,6 @@ func TestContext2Apply_plannedConnectionRefs(t *testing.T) {
 }
 
 func TestContext2Apply_cbdCycle(t *testing.T) {
-	SkipExperimental(t, ExperimentalFlagUnknown)
-
 	m, snap := testModuleWithSnapshot(t, "apply-cbd-cycle")
 	p := testProvider("test")
 	p.PlanResourceChangeFn = testDiffFn
@@ -10480,649 +10466,6 @@ func TestContext2Apply_cbdCycle(t *testing.T) {
 	if diags.HasErrors() {
 		t.Fatalf("diags: %s", diags.Err())
 	}
-}
-
-func TestContext2Apply_ProviderMeta_apply_set(t *testing.T) {
-	SkipExperimental(t, ExperimentalFeatureProviderMeta)
-
-	m := testModule(t, "provider-meta-set")
-	p := testProvider("test")
-	p.PlanResourceChangeFn = testDiffFn
-	schema := p.ProviderSchema()
-	schema.ProviderMeta = &configschema.Block{
-		Attributes: map[string]*configschema.Attribute{
-			"baz": {
-				Type:     cty.String,
-				Required: true,
-			},
-		},
-	}
-
-	var pmMu sync.Mutex
-	arcPMs := map[string]cty.Value{}
-
-	p.ApplyResourceChangeFn = func(req providers.ApplyResourceChangeRequest) providers.ApplyResourceChangeResponse {
-		pmMu.Lock()
-		defer pmMu.Unlock()
-		arcPMs[req.TypeName] = req.ProviderMeta
-
-		s := req.PlannedState.AsValueMap()
-		s["id"] = cty.StringVal("ID")
-		if ty, ok := s["type"]; ok && !ty.IsKnown() {
-			s["type"] = cty.StringVal(req.TypeName)
-		}
-		return providers.ApplyResourceChangeResponse{
-			NewState: cty.ObjectVal(s),
-		}
-	}
-	p.GetProviderSchemaResponse = getProviderSchemaResponseFromProviderSchema(schema)
-	ctx := testContext2(t, &ContextOpts{
-		Plugins: plugins.NewLibrary(map[addrs.Provider]providers.Factory{
-			addrs.NewDefaultProvider("test"): testProviderFuncFixed(p),
-		}, nil),
-	})
-
-	plan, diags := ctx.Plan(context.Background(), m, states.NewState(), DefaultPlanOpts)
-	assertNoErrors(t, diags)
-
-	_, diags = ctx.Apply(context.Background(), plan, m, nil)
-	assertNoErrors(t, diags)
-
-	if !p.ApplyResourceChangeCalled {
-		t.Fatalf("ApplyResourceChange not called")
-	}
-
-	if pm, ok := arcPMs["test_resource"]; !ok {
-		t.Fatalf("sub-module ApplyResourceChange not called")
-	} else if !pm.IsNull() {
-		t.Fatalf("Unexpected non-null ProviderMeta in sub-module ApplyResourceChange")
-	}
-
-	if pm, ok := arcPMs["test_instance"]; !ok {
-		t.Fatalf("root module ApplyResourceChange not called")
-	} else if !pm.IsNull() {
-		t.Fatalf("Unexpected non-null ProviderMeta in root module ApplyResourceChange")
-	}
-}
-
-func TestContext2Apply_ProviderMeta_apply_unset(t *testing.T) {
-	SkipExperimental(t, ExperimentalFeatureProviderMeta)
-
-	m := testModule(t, "provider-meta-unset")
-	p := testProvider("test")
-	p.PlanResourceChangeFn = testDiffFn
-	schema := p.ProviderSchema()
-	schema.ProviderMeta = &configschema.Block{
-		Attributes: map[string]*configschema.Attribute{
-			"baz": {
-				Type:     cty.String,
-				Required: true,
-			},
-		},
-	}
-	var pmMu sync.Mutex
-	arcPMs := map[string]cty.Value{}
-	p.ApplyResourceChangeFn = func(req providers.ApplyResourceChangeRequest) providers.ApplyResourceChangeResponse {
-		pmMu.Lock()
-		defer pmMu.Unlock()
-		arcPMs[req.TypeName] = req.ProviderMeta
-
-		s := req.PlannedState.AsValueMap()
-		s["id"] = cty.StringVal("ID")
-		if ty, ok := s["type"]; ok && !ty.IsKnown() {
-			s["type"] = cty.StringVal(req.TypeName)
-		}
-		return providers.ApplyResourceChangeResponse{
-			NewState: cty.ObjectVal(s),
-		}
-	}
-	p.GetProviderSchemaResponse = getProviderSchemaResponseFromProviderSchema(schema)
-	ctx := testContext2(t, &ContextOpts{
-		Plugins: plugins.NewLibrary(map[addrs.Provider]providers.Factory{
-			addrs.NewDefaultProvider("test"): testProviderFuncFixed(p),
-		}, nil),
-	})
-
-	plan, diags := ctx.Plan(context.Background(), m, states.NewState(), DefaultPlanOpts)
-	assertNoErrors(t, diags)
-
-	_, diags = ctx.Apply(context.Background(), plan, m, nil)
-	assertNoErrors(t, diags)
-
-	if !p.ApplyResourceChangeCalled {
-		t.Fatalf("ApplyResourceChange not called")
-	}
-
-	if pm, ok := arcPMs["test_resource"]; !ok {
-		t.Fatalf("sub-module ApplyResourceChange not called")
-	} else if !pm.IsNull() {
-		t.Fatalf("Unexpected non-null ProviderMeta in sub-module ApplyResourceChange: %+v", pm)
-	}
-
-	if pm, ok := arcPMs["test_instance"]; !ok {
-		t.Fatalf("root module ApplyResourceChange not called")
-	} else if !pm.IsNull() {
-		t.Fatalf("Unexpected non-null ProviderMeta in root module ApplyResourceChange: %+v", pm)
-	}
-}
-
-func TestContext2Apply_ProviderMeta_plan_set(t *testing.T) {
-	SkipExperimental(t, ExperimentalFeatureProviderMeta)
-
-	m := testModule(t, "provider-meta-set")
-	p := testProvider("test")
-	schema := p.ProviderSchema()
-	schema.ProviderMeta = &configschema.Block{
-		Attributes: map[string]*configschema.Attribute{
-			"baz": {
-				Type:     cty.String,
-				Required: true,
-			},
-		},
-	}
-	prcPMs := map[string]cty.Value{}
-	p.PlanResourceChangeFn = func(req providers.PlanResourceChangeRequest) providers.PlanResourceChangeResponse {
-		prcPMs[req.TypeName] = req.ProviderMeta
-		return providers.PlanResourceChangeResponse{
-			PlannedState: req.ProposedNewState,
-		}
-	}
-	p.GetProviderSchemaResponse = getProviderSchemaResponseFromProviderSchema(schema)
-	ctx := testContext2(t, &ContextOpts{
-		Plugins: plugins.NewLibrary(map[addrs.Provider]providers.Factory{
-			addrs.NewDefaultProvider("test"): testProviderFuncFixed(p),
-		}, nil),
-	})
-
-	_, diags := ctx.Plan(context.Background(), m, states.NewState(), DefaultPlanOpts)
-	assertNoErrors(t, diags)
-
-	if !p.PlanResourceChangeCalled {
-		t.Fatalf("PlanResourceChange not called")
-	}
-
-	if pm, ok := prcPMs["test_resource"]; !ok {
-		t.Fatalf("sub-module PlanResourceChange not called")
-	} else if !pm.IsNull() {
-		t.Fatalf("Unexpected non-null ProviderMeta in sub-module PlanResourceChange")
-	}
-
-	if pm, ok := prcPMs["test_instance"]; !ok {
-		t.Fatalf("root module PlanResourceChange not called")
-	} else if !pm.IsNull() {
-		t.Fatalf("Unexpected non-null ProviderMeta in root module PlanResourceChange")
-	}
-}
-
-func TestContext2Apply_ProviderMeta_plan_unset(t *testing.T) {
-	SkipExperimental(t, ExperimentalFeatureProviderMeta)
-
-	m := testModule(t, "provider-meta-unset")
-	p := testProvider("test")
-	schema := p.ProviderSchema()
-	schema.ProviderMeta = &configschema.Block{
-		Attributes: map[string]*configschema.Attribute{
-			"baz": {
-				Type:     cty.String,
-				Required: true,
-			},
-		},
-	}
-	prcPMs := map[string]cty.Value{}
-	p.PlanResourceChangeFn = func(req providers.PlanResourceChangeRequest) providers.PlanResourceChangeResponse {
-		prcPMs[req.TypeName] = req.ProviderMeta
-		return providers.PlanResourceChangeResponse{
-			PlannedState: req.ProposedNewState,
-		}
-	}
-	p.GetProviderSchemaResponse = getProviderSchemaResponseFromProviderSchema(schema)
-	ctx := testContext2(t, &ContextOpts{
-		Plugins: plugins.NewLibrary(map[addrs.Provider]providers.Factory{
-			addrs.NewDefaultProvider("test"): testProviderFuncFixed(p),
-		}, nil),
-	})
-
-	_, diags := ctx.Plan(context.Background(), m, states.NewState(), DefaultPlanOpts)
-	assertNoErrors(t, diags)
-
-	if !p.PlanResourceChangeCalled {
-		t.Fatalf("PlanResourceChange not called")
-	}
-
-	if pm, ok := prcPMs["test_resource"]; !ok {
-		t.Fatalf("sub-module PlanResourceChange not called")
-	} else if !pm.IsNull() {
-		t.Fatalf("non-null ProviderMeta in sub-module PlanResourceChange: %+v", pm)
-	}
-
-	if pm, ok := prcPMs["test_instance"]; !ok {
-		t.Fatalf("root module PlanResourceChange not called")
-	} else if !pm.IsNull() {
-		t.Fatalf("non-null ProviderMeta in root module PlanResourceChange: %+v", pm)
-	}
-}
-
-func TestContext2Apply_ProviderMeta_plan_setNoSchema(t *testing.T) {
-	SkipExperimental(t, ExperimentalFeatureProviderMeta)
-
-	m := testModule(t, "provider-meta-set")
-	p := testProvider("test")
-	p.PlanResourceChangeFn = testDiffFn
-	ctx := testContext2(t, &ContextOpts{
-		Plugins: plugins.NewLibrary(map[addrs.Provider]providers.Factory{
-			addrs.NewDefaultProvider("test"): testProviderFuncFixed(p),
-		}, nil),
-	})
-
-	_, diags := ctx.Plan(context.Background(), m, states.NewState(), DefaultPlanOpts)
-	assertNoErrors(t, diags)
-}
-
-func TestContext2Apply_ProviderMeta_plan_setInvalid(t *testing.T) {
-	SkipExperimental(t, ExperimentalFeatureProviderMeta)
-
-	m := testModule(t, "provider-meta-set")
-	p := testProvider("test")
-	p.PlanResourceChangeFn = testDiffFn
-	schema := p.ProviderSchema()
-	schema.ProviderMeta = &configschema.Block{
-		Attributes: map[string]*configschema.Attribute{
-			"quux": {
-				Type:     cty.String,
-				Required: true,
-			},
-		},
-	}
-	p.GetProviderSchemaResponse = getProviderSchemaResponseFromProviderSchema(schema)
-	ctx := testContext2(t, &ContextOpts{
-		Plugins: plugins.NewLibrary(map[addrs.Provider]providers.Factory{
-			addrs.NewDefaultProvider("test"): testProviderFuncFixed(p),
-		}, nil),
-	})
-
-	_, diags := ctx.Plan(context.Background(), m, states.NewState(), DefaultPlanOpts)
-	assertNoErrors(t, diags)
-}
-
-func TestContext2Apply_ProviderMeta_refresh_set(t *testing.T) {
-	SkipExperimental(t, ExperimentalFeatureProviderMeta)
-
-	m := testModule(t, "provider-meta-set")
-	p := testProvider("test")
-	p.PlanResourceChangeFn = testDiffFn
-	schema := p.ProviderSchema()
-	schema.ProviderMeta = &configschema.Block{
-		Attributes: map[string]*configschema.Attribute{
-			"baz": {
-				Type:     cty.String,
-				Required: true,
-			},
-		},
-	}
-	rrcPMs := map[string]cty.Value{}
-	p.ReadResourceFn = func(req providers.ReadResourceRequest) (resp providers.ReadResourceResponse) {
-		rrcPMs[req.TypeName] = req.ProviderMeta
-		newState, err := p.GetProviderSchemaResponse.ResourceTypes[req.TypeName].Block.CoerceValue(req.PriorState)
-		if err != nil {
-			panic(err)
-		}
-		resp.NewState = newState
-		return resp
-	}
-	p.GetProviderSchemaResponse = getProviderSchemaResponseFromProviderSchema(schema)
-	ctx := testContext2(t, &ContextOpts{
-		Plugins: plugins.NewLibrary(map[addrs.Provider]providers.Factory{
-			addrs.NewDefaultProvider("test"): testProviderFuncFixed(p),
-		}, nil),
-	})
-
-	plan, diags := ctx.Plan(context.Background(), m, states.NewState(), DefaultPlanOpts)
-	assertNoErrors(t, diags)
-
-	state, diags := ctx.Apply(context.Background(), plan, m, nil)
-	assertNoErrors(t, diags)
-
-	_, diags = ctx.Refresh(context.Background(), m, state, DefaultPlanOpts)
-	assertNoErrors(t, diags)
-
-	if !p.ReadResourceCalled {
-		t.Fatalf("ReadResource not called")
-	}
-
-	if pm, ok := rrcPMs["test_resource"]; !ok {
-		t.Fatalf("sub-module ReadResource not called")
-	} else if !pm.IsNull() {
-		t.Fatalf("Unexpected non-null ProviderMeta in sub-module ReadResource")
-	}
-
-	if pm, ok := rrcPMs["test_instance"]; !ok {
-		t.Fatalf("root module ReadResource not called")
-	} else if !pm.IsNull() {
-		t.Fatalf("Unexpected non-null ProviderMeta in root module ReadResource")
-	}
-}
-
-func TestContext2Apply_ProviderMeta_refresh_setNoSchema(t *testing.T) {
-	SkipExperimental(t, ExperimentalFeatureProviderMeta)
-
-	m := testModule(t, "provider-meta-set")
-	p := testProvider("test")
-	p.PlanResourceChangeFn = testDiffFn
-
-	// we need a schema for plan/apply so they don't error
-	schema := p.ProviderSchema()
-	schema.ProviderMeta = &configschema.Block{
-		Attributes: map[string]*configschema.Attribute{
-			"baz": {
-				Type:     cty.String,
-				Required: true,
-			},
-		},
-	}
-	p.GetProviderSchemaResponse = getProviderSchemaResponseFromProviderSchema(schema)
-	ctx := testContext2(t, &ContextOpts{
-		Plugins: plugins.NewLibrary(map[addrs.Provider]providers.Factory{
-			addrs.NewDefaultProvider("test"): testProviderFuncFixed(p),
-		}, nil),
-	})
-
-	plan, diags := ctx.Plan(context.Background(), m, states.NewState(), DefaultPlanOpts)
-	assertNoErrors(t, diags)
-
-	state, diags := ctx.Apply(context.Background(), plan, m, nil)
-	assertNoErrors(t, diags)
-
-	// drop the schema before refresh
-	schema.ProviderMeta = nil
-	p.GetProviderSchemaResponse = getProviderSchemaResponseFromProviderSchema(schema)
-	ctx = testContext2(t, &ContextOpts{
-		Plugins: plugins.NewLibrary(map[addrs.Provider]providers.Factory{
-			addrs.NewDefaultProvider("test"): testProviderFuncFixed(p),
-		}, nil),
-	})
-
-	_, diags = ctx.Refresh(context.Background(), m, state, DefaultPlanOpts)
-	assertNoErrors(t, diags)
-}
-
-func TestContext2Apply_ProviderMeta_refresh_setInvalid(t *testing.T) {
-	SkipExperimental(t, ExperimentalFeatureProviderMeta)
-
-	m := testModule(t, "provider-meta-set")
-	p := testProvider("test")
-	p.PlanResourceChangeFn = testDiffFn
-
-	// we need a matching schema for plan/apply so they don't error
-	schema := p.ProviderSchema()
-	schema.ProviderMeta = &configschema.Block{
-		Attributes: map[string]*configschema.Attribute{
-			"baz": {
-				Type:     cty.String,
-				Required: true,
-			},
-		},
-	}
-	p.GetProviderSchemaResponse = getProviderSchemaResponseFromProviderSchema(schema)
-	ctx := testContext2(t, &ContextOpts{
-		Plugins: plugins.NewLibrary(map[addrs.Provider]providers.Factory{
-			addrs.NewDefaultProvider("test"): testProviderFuncFixed(p),
-		}, nil),
-	})
-
-	plan, diags := ctx.Plan(context.Background(), m, states.NewState(), DefaultPlanOpts)
-	assertNoErrors(t, diags)
-
-	state, diags := ctx.Apply(context.Background(), plan, m, nil)
-	assertNoErrors(t, diags)
-
-	// change the schema before refresh
-	schema.ProviderMeta = &configschema.Block{
-		Attributes: map[string]*configschema.Attribute{
-			"quux": {
-				Type:     cty.String,
-				Required: true,
-			},
-		},
-	}
-	p.GetProviderSchemaResponse = getProviderSchemaResponseFromProviderSchema(schema)
-	ctx = testContext2(t, &ContextOpts{
-		Plugins: plugins.NewLibrary(map[addrs.Provider]providers.Factory{
-			addrs.NewDefaultProvider("test"): testProviderFuncFixed(p),
-		}, nil),
-	})
-
-	_, diags = ctx.Refresh(context.Background(), m, state, DefaultPlanOpts)
-	assertNoErrors(t, diags)
-}
-
-func TestContext2Apply_ProviderMeta_refreshdata_set(t *testing.T) {
-	SkipExperimental(t, ExperimentalFeatureProviderMeta)
-
-	m := testModule(t, "provider-meta-data-set")
-	p := testProvider("test")
-	p.PlanResourceChangeFn = testDiffFn
-	schema := p.ProviderSchema()
-	schema.ProviderMeta = &configschema.Block{
-		Attributes: map[string]*configschema.Attribute{
-			"baz": {
-				Type:     cty.String,
-				Required: true,
-			},
-		},
-	}
-	p.GetProviderSchemaResponse = getProviderSchemaResponseFromProviderSchema(schema)
-	ctx := testContext2(t, &ContextOpts{
-		Plugins: plugins.NewLibrary(map[addrs.Provider]providers.Factory{
-			addrs.NewDefaultProvider("test"): testProviderFuncFixed(p),
-		}, nil),
-	})
-	rdsPMs := map[string]cty.Value{}
-	p.ReadDataSourceFn = func(req providers.ReadDataSourceRequest) providers.ReadDataSourceResponse {
-		rdsPMs[req.TypeName] = req.ProviderMeta
-		switch req.TypeName {
-		case "test_data_source":
-			log.Printf("[TRACE] test_data_source RDSR returning")
-			return providers.ReadDataSourceResponse{
-				State: cty.ObjectVal(map[string]cty.Value{
-					"id":  cty.StringVal("yo"),
-					"foo": cty.StringVal("bar"),
-				}),
-			}
-		case "test_file":
-			log.Printf("[TRACE] test_file RDSR returning")
-			return providers.ReadDataSourceResponse{
-				State: cty.ObjectVal(map[string]cty.Value{
-					"id":       cty.StringVal("bar"),
-					"rendered": cty.StringVal("baz"),
-					"template": cty.StringVal(""),
-				}),
-			}
-		default:
-			// config drift, oops
-			log.Printf("[TRACE] unknown request TypeName: %q", req.TypeName)
-			return providers.ReadDataSourceResponse{}
-		}
-	}
-
-	plan, diags := ctx.Plan(context.Background(), m, states.NewState(), DefaultPlanOpts)
-	assertNoErrors(t, diags)
-
-	state, diags := ctx.Apply(context.Background(), plan, m, nil)
-	assertNoErrors(t, diags)
-
-	_, diags = ctx.Refresh(context.Background(), m, state, DefaultPlanOpts)
-	assertNoErrors(t, diags)
-
-	if !p.ReadDataSourceCalled {
-		t.Fatalf("ReadDataSource not called")
-	}
-
-	if pm, ok := rdsPMs["test_file"]; !ok {
-		t.Fatalf("sub-module ReadDataSource not called")
-	} else if !pm.IsNull() {
-		t.Fatalf("Unexpected non-null ProviderMeta in sub-module ReadDataSource")
-	}
-
-	if pm, ok := rdsPMs["test_data_source"]; !ok {
-		t.Fatalf("root module ReadDataSource not called")
-	} else if !pm.IsNull() {
-		t.Fatalf("Unexpected non-null ProviderMeta in root module ReadDataSource")
-	}
-}
-
-func TestContext2Apply_ProviderMeta_refreshdata_unset(t *testing.T) {
-	SkipExperimental(t, ExperimentalFeatureProviderMeta)
-
-	m := testModule(t, "provider-meta-data-unset")
-	p := testProvider("test")
-	p.PlanResourceChangeFn = testDiffFn
-	schema := p.ProviderSchema()
-	schema.ProviderMeta = &configschema.Block{
-		Attributes: map[string]*configschema.Attribute{
-			"baz": {
-				Type:     cty.String,
-				Required: true,
-			},
-		},
-	}
-	p.GetProviderSchemaResponse = getProviderSchemaResponseFromProviderSchema(schema)
-	ctx := testContext2(t, &ContextOpts{
-		Plugins: plugins.NewLibrary(map[addrs.Provider]providers.Factory{
-			addrs.NewDefaultProvider("test"): testProviderFuncFixed(p),
-		}, nil),
-	})
-	rdsPMs := map[string]cty.Value{}
-	p.ReadDataSourceFn = func(req providers.ReadDataSourceRequest) providers.ReadDataSourceResponse {
-		rdsPMs[req.TypeName] = req.ProviderMeta
-		switch req.TypeName {
-		case "test_data_source":
-			return providers.ReadDataSourceResponse{
-				State: cty.ObjectVal(map[string]cty.Value{
-					"id":  cty.StringVal("yo"),
-					"foo": cty.StringVal("bar"),
-				}),
-			}
-		case "test_file":
-			return providers.ReadDataSourceResponse{
-				State: cty.ObjectVal(map[string]cty.Value{
-					"id":       cty.StringVal("bar"),
-					"rendered": cty.StringVal("baz"),
-					"template": cty.StringVal(""),
-				}),
-			}
-		default:
-			// config drift, oops
-			return providers.ReadDataSourceResponse{}
-		}
-	}
-
-	plan, diags := ctx.Plan(context.Background(), m, states.NewState(), DefaultPlanOpts)
-	assertNoErrors(t, diags)
-
-	_, diags = ctx.Apply(context.Background(), plan, m, nil)
-	assertNoErrors(t, diags)
-
-	if !p.ReadDataSourceCalled {
-		t.Fatalf("ReadDataSource not called")
-	}
-
-	if pm, ok := rdsPMs["test_file"]; !ok {
-		t.Fatalf("sub-module ReadDataSource not called")
-	} else if !pm.IsNull() {
-		t.Fatalf("non-null ProviderMeta in sub-module ReadDataSource")
-	}
-
-	if pm, ok := rdsPMs["test_data_source"]; !ok {
-		t.Fatalf("root module ReadDataSource not called")
-	} else if !pm.IsNull() {
-		t.Fatalf("non-null ProviderMeta in root module ReadDataSource")
-	}
-}
-
-func TestContext2Apply_ProviderMeta_refreshdata_setNoSchema(t *testing.T) {
-	SkipExperimental(t, ExperimentalFeatureProviderMeta)
-
-	m := testModule(t, "provider-meta-data-set")
-	p := testProvider("test")
-	p.PlanResourceChangeFn = testDiffFn
-	ctx := testContext2(t, &ContextOpts{
-		Plugins: plugins.NewLibrary(map[addrs.Provider]providers.Factory{
-			addrs.NewDefaultProvider("test"): testProviderFuncFixed(p),
-		}, nil),
-	})
-	p.ReadDataSourceFn = func(req providers.ReadDataSourceRequest) providers.ReadDataSourceResponse {
-		switch req.TypeName {
-		case "test_data_source":
-			return providers.ReadDataSourceResponse{
-				State: cty.ObjectVal(map[string]cty.Value{
-					"id":  cty.StringVal("yo"),
-					"foo": cty.StringVal("bar"),
-				}),
-			}
-		case "test_file":
-			return providers.ReadDataSourceResponse{
-				State: cty.ObjectVal(map[string]cty.Value{
-					"id":       cty.StringVal("bar"),
-					"rendered": cty.StringVal("baz"),
-					"template": cty.StringVal(""),
-				}),
-			}
-		default:
-			// config drift, oops
-			return providers.ReadDataSourceResponse{}
-		}
-	}
-
-	_, diags := ctx.Refresh(context.Background(), m, states.NewState(), DefaultPlanOpts)
-	assertNoErrors(t, diags)
-}
-
-func TestContext2Apply_ProviderMeta_refreshdata_setInvalid(t *testing.T) {
-	SkipExperimental(t, ExperimentalFeatureProviderMeta)
-
-	m := testModule(t, "provider-meta-data-set")
-	p := testProvider("test")
-	p.PlanResourceChangeFn = testDiffFn
-	schema := p.ProviderSchema()
-	schema.ProviderMeta = &configschema.Block{
-		Attributes: map[string]*configschema.Attribute{
-			"quux": {
-				Type:     cty.String,
-				Required: true,
-			},
-		},
-	}
-	p.GetProviderSchemaResponse = getProviderSchemaResponseFromProviderSchema(schema)
-	ctx := testContext2(t, &ContextOpts{
-		Plugins: plugins.NewLibrary(map[addrs.Provider]providers.Factory{
-			addrs.NewDefaultProvider("test"): testProviderFuncFixed(p),
-		}, nil),
-	})
-	p.ReadDataSourceFn = func(req providers.ReadDataSourceRequest) providers.ReadDataSourceResponse {
-		switch req.TypeName {
-		case "test_data_source":
-			return providers.ReadDataSourceResponse{
-				State: cty.ObjectVal(map[string]cty.Value{
-					"id":  cty.StringVal("yo"),
-					"foo": cty.StringVal("bar"),
-				}),
-			}
-		case "test_file":
-			return providers.ReadDataSourceResponse{
-				State: cty.ObjectVal(map[string]cty.Value{
-					"id":       cty.StringVal("bar"),
-					"rendered": cty.StringVal("baz"),
-					"template": cty.StringVal(""),
-				}),
-			}
-		default:
-			// config drift, oops
-			return providers.ReadDataSourceResponse{}
-		}
-	}
-
-	_, diags := ctx.Refresh(context.Background(), m, states.NewState(), DefaultPlanOpts)
-	assertNoErrors(t, diags)
 }
 
 func TestContext2Apply_expandModuleVariables(t *testing.T) {
@@ -13003,8 +12346,6 @@ func TestContext2Apply_dataSensitive(t *testing.T) {
 }
 
 func TestContext2Apply_errorRestorePrivateData(t *testing.T) {
-	SkipExperimental(t, ExperimentalFlagUnknown)
-
 	// empty config to remove our resource
 	m := testModuleInline(t, map[string]string{
 		"main.tf": "",

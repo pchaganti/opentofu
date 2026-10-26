@@ -125,7 +125,7 @@ func (c *CompiledModuleInstance) ResourceInstanceObjectMeta(ctx context.Context,
 	configAddr := addr.InstanceAddr.ConfigResource()
 	for _, importNode := range c.importNodes {
 		if !importNode.Addr.Equal(configAddr) {
-			break
+			continue
 		}
 		instances, _ := importNode.Instances(ctx)
 		for _, instance := range instances {
@@ -141,6 +141,24 @@ func (c *CompiledModuleInstance) ResourceInstanceObjectMeta(ctx context.Context,
 					ID:        statement.ID,
 					Identity:  statement.Identity,
 				}
+
+				// Inject information that's only used in the GenConfig path
+				ret.DeclRange = statement.DeclRange
+				ret.Provider = &evalglue.ResourceInstanceObjectProvider{
+					Provider: instance.Provider,
+
+					// In this language edition the author-specified resource type always
+					// matches the provider's chosen resource type name, so we can just
+					// derive these directly from the resource address.
+					ResourceMode: addr.InstanceAddr.Resource.Resource.Mode,
+					ResourceType: addr.InstanceAddr.Resource.Resource.Type,
+				}
+
+				providerInst, _ := instance.ProviderInstance(ctx)
+				providerInstAddr, _ := providerInst.Derive(func(providerInst *configgraph.ProviderInstance) (addrs.AbsProviderInstanceCorrect, error) {
+					return providerInst.Addr, nil
+				})
+				ret.Provider.Instance = &providerInstAddr
 			}
 		}
 	}
@@ -434,28 +452,42 @@ func (c *CompiledModuleInstance) ImportStatements(ctx context.Context) []*config
 }
 
 func (c *CompiledModuleInstance) DetectImplicitMoveForAddress(ctx context.Context, addr addrs.AbsResourceInstance) *addrs.AbsResourceInstance {
+	invertKey := func(normal addrs.InstanceKey, currentType addrs.InstanceKeyType) addrs.InstanceKey {
+		switch currentType {
+		case addrs.NoKeyType:
+			if ik, ok := normal.(addrs.IntKey); ok && ik == 0 {
+				return addrs.NoKey
+			}
+		case addrs.IntKeyType:
+			if normal == addrs.NoKey {
+				return addrs.IntKey(0)
+			}
+		}
+		return normal
+	}
+
 	if len(c.moduleInstanceNode.Addr) < len(addr.Module) {
 		// Find child module and recurse
 		childStep := addr.Module[len(c.moduleInstanceNode.Addr)]
 		childCall := addrs.ModuleCall{Name: childStep.Name}
+		callInstance := addrs.ModuleCallInstance{Call: childCall, Key: childStep.InstanceKey}
 
-		if instance := c.ChildModuleInstance(ctx, addrs.ModuleCallInstance{Call: childCall, Key: childStep.InstanceKey}); instance != nil {
+		if instance := c.ChildModuleInstance(ctx, callInstance); instance != nil {
 			return instance.DetectImplicitMoveForAddress(ctx, addr)
 		}
 
-		if childStep.InstanceKey == addrs.NoKey {
-			// Try NoKey -> 0
-			// TODO check iteration type
-			if instance := c.ChildModuleInstance(ctx, addrs.ModuleCallInstance{Call: childCall, Key: addrs.IntKey(0)}); instance != nil {
-				return instance.DetectImplicitMoveForAddress(ctx, addr)
-			}
-		} else if ik, ok := childStep.InstanceKey.(addrs.IntKey); ok && ik == 0 {
-			// Try 0 -> NoKey
-			// TODO check iteration type
-			if instance := c.ChildModuleInstance(ctx, addrs.ModuleCallInstance{Call: childCall, Key: addrs.NoKey}); instance != nil {
-				return instance.DetectImplicitMoveForAddress(ctx, addr)
-			}
+		call, ok := c.moduleCallNodes[childCall]
+		if !ok {
+			// Child call not found
+			return nil
 		}
+
+		callInstance.Key = invertKey(callInstance.Key, call.InstanceSelector.InstanceKeyType())
+
+		if instance := c.ChildModuleInstance(ctx, callInstance); instance != nil {
+			return instance.DetectImplicitMoveForAddress(ctx, addr)
+		}
+
 		// No child instance found
 		return nil
 	}
@@ -468,16 +500,7 @@ func (c *CompiledModuleInstance) DetectImplicitMoveForAddress(ctx context.Contex
 	// Find potential instances
 	normal := addr.Resource
 	invert := addr.Resource
-
-	if invert.Key == addrs.NoKey {
-		// Try NoKey -> 0
-		// TODO check iteration type
-		invert.Key = addrs.IntKey(0)
-	} else if ik, ok := invert.Key.(addrs.IntKey); ok && ik == 0 {
-		// Try 0 -> NoKey
-		// TODO check iteration type
-		invert.Key = addrs.NoKey
-	}
+	invert.Key = invertKey(normal.Key, resource.InstanceSelector.InstanceKeyType())
 
 	instances := resource.Instances(ctx)
 	if len(instances) == 0 && invert.Key != normal.Key {
