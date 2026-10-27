@@ -387,7 +387,8 @@ func (ops *execOperations) ManagedApply(
 		// back to being the current object for our resource instance before
 		// we return.
 		if fallback != nil {
-			ok := ops.workingState.MaybeRestoreResourceInstanceDeposed(fallback.Addr.InstanceAddr, fallback.Addr.DeposedKey)
+			ok, err := ops.workingState.MaybeRestoreResourceInstanceDeposed(fallback.Addr.InstanceAddr, fallback.Addr.DeposedKey)
+			diags = diags.Append(err)
 			if !ok {
 				diags = diags.Append(tfdiags.Sourceless(
 					tfdiags.Error,
@@ -399,7 +400,7 @@ func (ops *execOperations) ManagedApply(
 				))
 			}
 		}
-		result, moreDiags := ops.resourceInstanceStateObject(ctx, ops.workingState, plan.Addr.InstanceAddr, states.NotDeposed)
+		result, moreDiags := ops.resourceInstanceStateObject(ctx, plan.Addr.InstanceAddr, states.NotDeposed)
 		diags = diags.Append(moreDiags)
 		return result, diags
 	}
@@ -427,10 +428,55 @@ func (ops *execOperations) ManagedApply(
 
 	var state *states.ResourceInstanceObjectFull
 	if !resp.NewState.IsNull() {
-		status := states.ObjectTainted
-		if !diags.HasErrors() {
-			status = states.ObjectReady
+		// By this point there must not be any unknown values remaining in our
+		// object, because we've applied the change and we can't save unknowns
+		// in our persistent state. If any are present then we will indicate an
+		// error (which is always a bug in the provider) but we will also replace
+		// them with nulls so that we can successfully save the portions of the
+		// returned value that are known.
+		if !resp.NewState.IsWhollyKnown() {
+			// To generate better error messages, we'll go for a walk through the
+			// value and make a separate diagnostic for each unknown value we
+			// find.
+			// We don't care about the error return here as it's only to help build a more detailed error message
+			_ = cty.Walk(resp.NewState, func(path cty.Path, val cty.Value) (bool, error) {
+				if !val.IsKnown() {
+					pathStr := tfdiags.FormatCtyPath(path)
+					diags = diags.Append(tfdiags.Sourceless(
+						tfdiags.Error,
+						"Provider returned invalid result object after apply",
+						fmt.Sprintf(
+							"After the apply operation, the provider still indicated an unknown value for %s%s. All values must be known after apply, so this is always a bug in the provider and should be reported in the provider's own repository. OpenTofu will still save the other known object values in the state.",
+							plan.Addr, pathStr,
+						),
+					))
+				}
+				return true, nil
+			})
+
+			// NOTE: This operation can potentially be lossy if there are multiple
+			// elements in a set that differ only by unknown values: after
+			// replacing with null these will be merged together into a single set
+			// element. Since we can only get here in the presence of a provider
+			// bug, we accept this because storing a result here is always a
+			// best-effort sort of thing.
+			resp.NewState = cty.UnknownAsNull(resp.NewState)
 		}
+
+		status := states.ObjectReady
+		if plan.Addr.IsCurrent() && diags.HasErrors() {
+			status = states.ObjectTainted
+
+			prev := ops.priorState.ResourceInstanceObjectFull(plan.Addr)
+			if prev != nil && prev.Status == states.ObjectTainted {
+				// If the current object was already tainted, don't modify state
+				// TestContext2Apply_errorRestoreStatus covers this functionallity.
+				// NOTE: we are ignoring the providers new value here, which
+				// may or may not be correct after attempting a provider operation.
+				return nil, diags
+			}
+		}
+
 		state = &states.ResourceInstanceObjectFull{
 			Status:               status,
 			Value:                resp.NewState,
@@ -468,14 +514,16 @@ func (ops *execOperations) ManagedApply(
 			diags = diags.Append(fmt.Errorf("failed to encode the new state for %s: %w", plan.Addr, err))
 			return nil, diags
 		}
-		ops.workingState.SetResourceInstanceObjectFull(objAddr, stateSrc)
+		err = ops.workingState.SetResourceInstanceObjectFull(objAddr, stateSrc)
+		diags = diags.Append(err)
 	} else {
 		// A null value for "new state" represents that the object has been
 		// deleted, so we now just need to remove it from the state.
 		// Unfortunately this API is still a little quirkly and wants us to
 		// pass the provider instance address so that it can update some
 		// resource-level and instance-level metadata as a side-effect.
-		ops.workingState.RemoveResourceInstanceObjectFull(objAddr, providerConfigAddr)
+		err := ops.workingState.RemoveResourceInstanceObjectFull(objAddr, providerConfigAddr)
+		diags = diags.Append(err)
 	}
 
 	if state != nil {
@@ -542,7 +590,8 @@ func (ops *execOperations) ManagedForget(
 	}
 
 	// For "forget" we just unconditionally remove the object from the state.
-	ops.workingState.RemoveResourceInstanceObjectFull(objAddr, plan.ProviderInstance)
+	err := ops.workingState.RemoveResourceInstanceObjectFull(objAddr, plan.ProviderInstance)
+	diags = diags.Append(err)
 
 	if provs := plan.ProvisionersAfter; len(provs) != 0 {
 		// Post-apply provisioners are only relevant when there's still an
@@ -588,7 +637,8 @@ func (ops *execOperations) ManagedPerformDepose(
 	}
 
 	deposedKey := deletePlan.Addr.DeposedKey
-	ops.workingState.DeposeResourceInstanceObjectForceKey(deletePlan.Addr.InstanceAddr, deposedKey)
+	err := ops.workingState.DeposeResourceInstanceObjectForceKey(deletePlan.Addr.InstanceAddr, deposedKey)
+	diags = diags.Append(err)
 	return currentObj.IntoDeposed(deposedKey), diags
 }
 
@@ -616,7 +666,7 @@ func (ops *execOperations) ManagedAlreadyDeposed(
 	// This is essentially the same as ResourceInstancePrior, but for deposed
 	// objects rather than "current" objects. Therefore we'll share most of the
 	// implementation between these two.
-	return ops.resourceInstanceStateObject(ctx, ops.priorState, instAddr, deposedKey)
+	return ops.resourceInstanceStateObject(ctx, instAddr, deposedKey)
 }
 
 // ManagedChangeAddr implements [exec.Operations].
@@ -643,7 +693,9 @@ func (ops *execOperations) ManagedChangeAddr(
 		return nil, diags
 	}
 
-	if !ops.workingState.MaybeMoveResourceInstance(currentObj.Addr.InstanceAddr, newAddr) {
+	moved, err := ops.workingState.MaybeMoveResourceInstance(currentObj.Addr.InstanceAddr, newAddr)
+	diags = diags.Append(err)
+	if !moved {
 		// We should not get here with a correctly-constructed execution graph
 		// because currentObj being non-nil means that there should definitely
 		// be something to move.
