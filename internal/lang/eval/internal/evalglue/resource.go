@@ -8,6 +8,7 @@ package evalglue
 import (
 	"context"
 
+	"github.com/hashicorp/hcl/v2"
 	"github.com/zclconf/go-cty/cty"
 
 	"github.com/opentofu/opentofu/internal/addrs"
@@ -23,7 +24,30 @@ import (
 // defined here to avoid import cycles when this is used by language edition
 // and configgraph code.
 type ConfiguredResourceInstanceObjectMeta struct {
-	DeclRange tfdiags.SourceRange
+	// Want summarizes this module's opinion about whether this object is
+	// "wanted" or not.
+	//
+	// A module which has no information should use
+	// [ResourceInstanceObjectWantUnspecified].
+	// Use [ResourceInstanceObjectDesired] or [ResourceInstanceObjectUnwanted]
+	// only when something in the configuration directly declares the
+	// "wantedness" of the resource instance object, in which case the source
+	// range of the declaration should typically be what's recored in
+	// the PrimaryDeclRange field.
+	Want ResourceInstanceObjectWant
+
+	// PrimaryDeclRange is the source range of whatever represents the most
+	// significant declaration of this resource instance object in the
+	// configuration.
+	//
+	// This can be nil for an object that exists only in the prior state, but
+	// it can be populated even for non-desired objects in cases such as if
+	// a resource instance has been removed while its resource block still
+	// exists, or to refer to an explicit "removed" block that is acting as
+	// a "tombstone" for a resource instance that used to be declared.
+	//
+	// Do not mutate the object this pointer refers to.
+	PrimaryDeclRange *tfdiags.SourceRange
 
 	// Provider describes what is known about this resource instance object's
 	// relationship with a provider: which provider it belongs to, what name
@@ -53,21 +77,19 @@ type ConfiguredResourceInstanceObjectMeta struct {
 	// for other resource modes.
 	ReplaceOrder *exprs.FromValue[resources.ReplaceOrder]
 
-	// DeleteWhenRemoved is true if the expected treatment for a non-desired
-	// object at this address is to ask the associated provider to delete it,
-	// or false if the expected treatment is just to "forget" it by removing
-	// the binding from the state without notifying the provider.
+	// ActionIfUnwanted specifies the expected treatment for a non-desired
+	// object at this address.
 	//
-	// An nil value represents that there is no information about how this
-	// object should be treated when removed.
-	//
-	// This field is relevant only for managed resource mode and should always
-	// be nil for other resource modes.
-	DeleteWhenRemoved *exprs.FromValue[bool]
+	// This field is relevant only for managed resource mode and should be
+	// be ignored completely for other resource modes.
+	ActionIfUnwanted exprs.WithSourceRange[resources.ActionIfUnwanted]
 
 	// DeletionInvalid is true if the author has configured that any execution
 	// plan that involves deleting this object should be considered immediately
 	// invalid. If false then deleting is a valid action to include.
+	//
+	// This only applies when the action is actually "delete", and not when
+	// the action is "forget" due to the DeleteWhenRemoved field.
 	//
 	// This field is relevant only for managed resource mode and its value is
 	// unspecified for other resource modes.
@@ -102,6 +124,33 @@ type ConfiguredResourceInstanceObjectMeta struct {
 
 	OrphanActionReason plans.ResourceInstanceChangeActionReason
 }
+
+// PrimaryDeclRangeHCL returns the same information as
+// [ConfiguredResourceInstanceObjectMeta.PrimaryDeclRange] but using HCL's
+// range type, instead of OpenTofu's.
+//
+// It is safe to call this when the range is nil, in which case this method
+// also returns nil.
+func (m *ConfiguredResourceInstanceObjectMeta) PrimaryDeclRangeHCL() *hcl.Range {
+	if m.PrimaryDeclRange == nil {
+		return nil
+	}
+	return m.PrimaryDeclRange.ToHCL().Ptr()
+}
+
+// ResourceInstanceObjectWant is the true internal name for what external
+// packages know as [eval.ResourceInstanceObjectWant],
+// defined here to avoid import cycles when this is used by language edition
+// and configgraph code.
+type ResourceInstanceObjectWant byte
+
+//go:generate go tool golang.org/x/tools/cmd/stringer -type=ResourceInstanceObjectWant -trimprefix ResourceInstanceObject
+
+const (
+	ResourceInstanceObjectWantUnspecified ResourceInstanceObjectWant = iota
+	ResourceInstanceObjectDesired
+	ResourceInstanceObjectUnwanted
+)
 
 // ResourceInstanceObjectProvider describes the provider-related metadata
 // for a resource instance object, as part of

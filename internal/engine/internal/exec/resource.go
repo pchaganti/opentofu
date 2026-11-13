@@ -227,6 +227,22 @@ type ResourceInstanceObjectMeta struct {
 	// the course of the apply phase.
 	Addr addrs.AbsResourceInstanceObject
 
+	// PrimaryDeclRange is the source range that should be used to represent
+	// the declaration of this resource instance object in the configuration,
+	// if any.
+	//
+	// This is nil when there is no suitable declaration to use. Note that this
+	// can potentially be non-nil even for a non-desired resource instance
+	// object, such as if an instance of a resource has been removed while the
+	// overall resource block remains present, or when this refers to an
+	// explicit "removed" block instead of to a resource block. Generally we
+	// make a best effort to put _something_ in this field so that any errors
+	// relating to the resource instance object have some source code element
+	// to refer to.
+	//
+	// Do not mutate the object this pointer refers to.
+	PrimaryDeclRange *tfdiags.SourceRange
+
 	// Provider is the address of the provider that the resource type in
 	// [ResourceInstanceObjectMeta.ResourceType] belongs to.
 	Provider addrs.Provider
@@ -234,8 +250,6 @@ type ResourceInstanceObjectMeta struct {
 	// as would be understood by the provider identified in
 	// [ResourceInstanceObjectMeta.Provider].
 	ResourceType string
-
-	DeclRange tfdiags.SourceRange
 
 	// ProviderInstance is the address of the provider instance that is
 	// currently considered responsible for this resource instance object.
@@ -282,9 +296,23 @@ type ResourceInstanceObjectMeta struct {
 	// unspecified for other resource modes.
 	ReplaceOrder exprs.FromValue[resources.ReplaceOrder]
 
+	// ActionIfUnwanted specifies the expected treatment for a non-desired
+	// object at this address.
+	//
+	// Other fields of this type include the word "delete" because that is the
+	// common case, but they also apply to other "unwanted" situations unless
+	// otherwise stated.
+	//
+	// This field is relevant only for managed resource mode and should be
+	// be ignored completely for other resource modes.
+	ActionIfUnwanted exprs.FromValue[resources.ActionIfUnwanted]
+
 	// DeletionInvalid is true if the author has configured that any execution
 	// plan that involves deleting this object should be considered immediately
 	// invalid. If false then deleting is a valid action to include.
+	//
+	// This only applies when the action is actually "delete", and not when
+	// the action is "forget" due to the ActionIfUnwanted field.
 	//
 	// This field is relevant only for managed resource mode and its value is
 	// unspecified for other resource modes.
@@ -331,6 +359,14 @@ func BuildResourceInstanceObjectMeta[SV states.ValueOrJSONEquivalent](
 	fromConfig []eval.ModuleConfiguredResourceInstanceObjectMeta,
 	state *states.ResourceInstanceObjectRepr[SV], // We only care about metadata, so either the decoded or encoded variant is acceptable
 ) *ResourceInstanceObjectMeta {
+	// NOTE: This function should always to return something reasonable even if
+	// the given metadata objects are inconsistent with one another, because
+	// callers sometimes need to construct a best-effort merged metadata before
+	// they validate whether the individual module instances are valid. It's
+	// the planning engine's responsibility to detect and report conflicting
+	// information between the fromConfig objects and thus prevent the metadata
+	// from being used for any actual planning or applying work.
+
 	if len(fromConfig) == 0 && state == nil {
 		panic(fmt.Sprintf("cannot build resource instance object metadata for %s with neither configured nor prior state metadata", addr))
 	}
@@ -341,6 +377,10 @@ func BuildResourceInstanceObjectMeta[SV states.ValueOrJSONEquivalent](
 		// type, but hopefully at least one of the sources we consider below
 		// will override this with something more explicit.
 		Provider: addrs.ImpliedProviderForUnqualifiedType(addr.InstanceAddr.Resource.Resource.ImpliedProvider()),
+
+		// We delete when removed unless explicitly overridden in the
+		// configuration somewhere or previously set to forget in the state.
+		ActionIfUnwanted: exprs.Known(resources.IfUnwantedDelete),
 	}
 
 	// If both state and fromConfig are present then we'll start with state
@@ -363,10 +403,20 @@ func BuildResourceInstanceObjectMeta[SV states.ValueOrJSONEquivalent](
 			ret.ReplaceOrder = exprs.Known(resources.ReplaceAnyOrder)
 		}
 
+		if state.SkipDestroy {
+			// The state is allowed to change our base value for this, but the
+			// configuration always wins if it specifies anything, which it
+			// typically will unless there are no mentions of this object
+			// in the configuration at all anymore.
+			ret.ActionIfUnwanted = exprs.Known(resources.IfUnwantedForget)
+		}
+
 		ret.Status = state.Status
 
 		// TODO: Everything else
 	}
+
+	actionIfUnwantedSet := false
 
 	for _, fromModule := range fromConfig {
 		if p := fromModule.Provider; p != nil {
@@ -377,14 +427,7 @@ func BuildResourceInstanceObjectMeta[SV states.ValueOrJSONEquivalent](
 			}
 		}
 
-		// FIXME: This is currently just taking the range from whatever is
-		// the deepest module that has any opinion about this resource instance,
-		// which doesn't seem right. We should probably refine what
-		// [eval.ConfiguredResourceInstanceMeta.DeclRange] actually means --
-		// e.g. specifying that it should only be populated when a module
-		// instance includes a declaration that the object is desired --
-		// and let it be nil for module instances where that isn't true.
-		ret.DeclRange = fromModule.DeclRange
+		ret.PrimaryDeclRange = fromModule.PrimaryDeclRange
 
 		if fromModule.OrphanActionReason != plans.ResourceInstanceChangeNoReason {
 			ret.OrphanActionReason = fromModule.OrphanActionReason
@@ -394,6 +437,25 @@ func BuildResourceInstanceObjectMeta[SV states.ValueOrJSONEquivalent](
 		ret.PreDeleteProvisioners = append(ret.PreDeleteProvisioners, fromModule.PreDeleteProvisioners...)
 		if fromModule.ReplaceOrder != nil {
 			ret.ReplaceOrder = *fromModule.ReplaceOrder
+		}
+
+		// For the DeleteWhenRemoved option in particular we take the _outermost_
+		// setting, so that e.g. a root module can override the setting chosen
+		// by a child module it calls. deleteWhenRemovedSet is set to true when
+		// we encounter the first explicit opinion about it, and then we ignore
+		// it for any nested modules.
+		if !actionIfUnwantedSet {
+			// We ignore marks here and just propagate them into the result
+			// if relevant, since they don't affect our decision about who
+			// "wins" when there are multiple competing definitions.
+			unmarked, _ := fromModule.ActionIfUnwanted.FromValue.Unmark()
+			if val, known := unmarked.ValueOk(); !known || val != resources.IfUnwantedUndecided {
+				// We discard the source location information here because any
+				// rules restricting usage of this option are expected to be checked
+				// before we merge the configuration-based values together here.
+				ret.ActionIfUnwanted = fromModule.ActionIfUnwanted.FromValue
+				actionIfUnwantedSet = true
+			}
 		}
 
 		if fromModule.DeletionInvalid != nil {
