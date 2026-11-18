@@ -81,11 +81,15 @@ var (
 	ExperimentalBugStateUpdateHook   = ExperimentalFlag{"Bug State Update Hook", true}
 	ExperimentalBugMissingResource   = ExperimentalFlag{"Bug Missing Configuration For Resource Instance", true}
 	ExperimentalBugResourceReadNull  = ExperimentalFlag{"Bug Read Resource Deleted", true}
-	ExperimentalBugDataResource      = ExperimentalFlag{"Bug Data Resource", false}
+	ExperimentalBugDataResource      = ExperimentalFlag{"Bug Data Resource", true}
 	ExperimentalBugResourceMarks     = ExperimentalFlag{"Bug Not Transferring Marks from Resource Instance Config Value to Final Value", false}
 	ExperimentalBugTaintOnCreateFail = ExperimentalFlag{"Bug Not Tainted When Create Fails", true}
 	ExperimentalBugProviderPrivate   = ExperimentalFlag{"Bug Provider Private Data Not Preserved", true}
 	ExperimentalBugCircularReference = ExperimentalFlag{"Bug Circular Reference", true}
+
+	ExperimentalBugProviderDepsInExecgraph     = ExperimentalFlag{"Bug Provider Dependencies Must Compile Into Execgraph", false}
+	ExperimentalBugStripRemovedStateAttributes = ExperimentalFlag{"Bug State Attributes Removed on State Upgrade", false}
+	ExperimentalBugDataDestroyAndRead          = ExperimentalFlag{"Bug Read Data Resource During Destroy", false}
 
 	ExperimentalChangeDiagWording     = ExperimentalFlag{"Change Different Diagnostic Wording", false}
 	ExperimentalChangeErrorEarly      = ExperimentalFlag{"Change Detect Error Earlier", false}
@@ -113,7 +117,7 @@ var (
 	ExperimentalFeatureMoved           = ExperimentalFlag{"Missing Moved", true}
 	ExperimentalFeatureRemoved         = ExperimentalFlag{"Missing Removed", false}
 	ExperimentalFeatureSkipDestroy     = ExperimentalFlag{"Missing Lifecycle Destroy", false}
-	ExperimentalFeatureUpgradeUnwanted = ExperimentalFlag{"Missing Upgrade Orphan or Deposed Resource Instance State", false}
+	ExperimentalFeatureUpgradeUnwanted = ExperimentalFlag{"Missing Upgrade Orphan or Deposed Resource Instance State", true}
 	ExperimentalFeatureTarget          = ExperimentalFlag{"Missing Targeting", true}
 	ExperimentalFeatureVarCondition    = ExperimentalFlag{"Missing Variable Condiitions", false}
 	ExperimentalFeaturePlannedState    = ExperimentalFlag{"Missing Planned State", false}
