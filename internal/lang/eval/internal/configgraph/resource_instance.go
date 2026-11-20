@@ -99,6 +99,14 @@ type ResourceInstance struct {
 	// appear in RequiredResourceInstances.
 	ReplaceTriggeredBy []ResourceInstanceAttributePath
 
+	// Preconditions are user-defined checks that must succeed before OpenTofu
+	// will evaluate the resource value's expression.
+	Preconditions func(ctx context.Context, value cty.Value) iter.Seq[*CheckRule]
+
+	// Postconditions are user-defined checks that must succeed before OpenTofu
+	// will evaluate the resource value's expression.
+	Postconditions func(ctx context.Context, value cty.Value) iter.Seq[*CheckRule]
+
 	// Glue is provided by the system that "compiled" this [ResourceInstance]
 	// object to allow calling back into that system to ask further questions
 	// that arise dynamically during evaluation but whose results vary based
@@ -235,6 +243,32 @@ func (ri *ResourceInstance) Value(ctx context.Context) (v cty.Value, diags tfdia
 	return ri.valueOnce.Do(ctx, func(ctx context.Context) (cty.Value, tfdiags.Diagnostics) {
 		configVal, diags := ri.ConfigValue(ctx)
 
+		preconditionMarks, preDiags := CheckAllRulesDefault(ctx, ri.Addr, addrs.ResourcePrecondition, ri.Preconditions(ctx, configVal), ri.ValueSourceRange())
+		diags = diags.Append(preDiags)
+
+		// Include precondition marks in config value
+		// TODO consider RemoveNonDependencyMarks for all check rules?
+		configVal = configVal.WithMarks(preconditionMarks)
+
+		if preDiags.HasErrors() {
+			// TODO There's some weird interactions that aren't quite right between
+			// pre and post conditions (HasErrors vs len /w warnings).
+			// TestContext2Plan_resourcePreconditionPostcondition/precondition_fail_refresh-only
+			// It appears that for data resources, failing preconditions still cause the provider
+			// to read the value during refresh-only planning.
+			// I'm not sure if this is intentional or a bug.  I'm pretty sure it's a bug.
+			configVal = exprs.AsEvalError(cty.DynamicVal).WithSameMarks(configVal)
+		}
+
+		// Workaround: the dependencies need to be fully known by the time we get into the resultVal
+		// computation below.  However, we would normally compute the postconditionMarks down there.
+		// Instead, we need to do our best to get all of the possible dependency marks out of the conditions
+		// before resultVal computation.
+		// The alternative approach is to integrate the postcondition logic directly into the engine through a callback.
+		// It's unclear if that additional complexity is nessesary at this point and is likely unnessesary complexity.
+		postconditionMarks := MarksFromAllRules(ctx, ri.Postconditions(ctx, cty.DynamicVal.WithSameMarks(configVal)))
+		configVal = configVal.WithMarks(postconditionMarks)
+
 		providerInst, moreDiags := ri.ProviderInstance(ctx)
 		diags = diags.Append(moreDiags)
 
@@ -257,6 +291,12 @@ func (ri *ResourceInstance) Value(ctx context.Context) (v cty.Value, diags tfdia
 		resultVal, moreDiags := ri.Glue.ResultValue(ctx, configVal, providerInst, riDeps)
 		diags = diags.Append(moreDiags)
 
+		// Postconditions, and transfer [ResourceInstanceMark] marks from
+		// the check rule expressions onto resultVal because the presence of
+		// a valid result value indirectly depends on those references.
+		_, postDiags := CheckAllRulesDefault(ctx, ri.Addr, addrs.ResourcePostcondition, ri.Postconditions(ctx, resultVal), ri.ValueSourceRange())
+		diags = diags.Append(postDiags)
+
 		// We must pass the marks from the provider instance selection into the
 		// result because the values that were returned may vary depending on
 		// the provider configuration.
@@ -264,13 +304,17 @@ func (ri *ResourceInstance) Value(ctx context.Context) (v cty.Value, diags tfdia
 		RemoveNonDependencyMarks(providerInstMarks)
 		resultVal = resultVal.WithMarks(providerInstMarks)
 
-		// TODO: Postconditions, and transfer [ResourceInstanceMark] marks from
-		// the check rule expressions onto resultVal because the presence of
-		// a valid result value indirectly depends on those references.
-
 		// The result needs some additional preparation to make sure it's
 		// marked correctly for ongoing use in other expressions.
-		return exprs.EvalResult(prepareResourceInstanceResult(resultVal, ri, configVal), diags)
+		resultVal = prepareResourceInstanceResult(resultVal, ri, configVal)
+
+		if len(postDiags) != 0 {
+			// If the postconditions caused at least one error then we must
+			// not proceed any further.
+			resultVal = exprs.AsEvalError(cty.DynamicVal).WithSameMarks(resultVal)
+		}
+
+		return exprs.EvalResult(resultVal, diags)
 	}, ri.ConfigValuer.ValueSourceRange(), "Value of %s", ri.Addr)
 }
 

@@ -140,6 +140,7 @@ func (i *InputVariable) value(ctx context.Context) (cty.Value, tfdiags.Diagnosti
 		validationMarks, moreDiags = CheckAllRules(ctx,
 			i.CompileValidationRules(ctx, finalV),
 			func(ruleDeclRange tfdiags.SourceRange, status checks.Status, errMsg string) tfdiags.Diagnostics {
+				checks.ReportCheckInContext(ctx, i.Addr, addrs.InputValidation, status, errMsg)
 				var diags tfdiags.Diagnostics
 				if status == checks.StatusFail {
 					var srcRange *hcl.Range
@@ -148,8 +149,8 @@ func (i *InputVariable) value(ctx context.Context) (cty.Value, tfdiags.Diagnosti
 						srcRange = valueRange.ToHCL().Ptr()
 					}
 					diags = diags.Append(&hcl.Diagnostic{
-						Severity: hcl.DiagError,
-						Summary:  "Invalid value for input variable",
+						Severity: checks.SeverityFromContext(ctx, i.Addr).ToHCL(),
+						Summary:  "Invalid value for variable",
 						Detail:   fmt.Sprintf("%s\n\nThis problem was reported by the validation rule at %s.", errMsg, ruleDeclRange.StartString()),
 						Subject:  srcRange,
 					})

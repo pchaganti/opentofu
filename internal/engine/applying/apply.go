@@ -11,6 +11,7 @@ import (
 	"github.com/zclconf/go-cty/cty"
 
 	"github.com/opentofu/opentofu/internal/addrs"
+	"github.com/opentofu/opentofu/internal/checks"
 	"github.com/opentofu/opentofu/internal/engine/internal/execgraph"
 	"github.com/opentofu/opentofu/internal/engine/plugins"
 	"github.com/opentofu/opentofu/internal/lang/eval"
@@ -36,6 +37,19 @@ func ApplyPlannedChanges(ctx context.Context, plan *plans.Plan, configInst *eval
 	tracer := contextTracer(ctx)
 	ctx = shared.ContextWithTracer(ctx, &tracer.Tracer)
 
+	// NOTE: The current runtime starts off with a copy of checks from
+	// the plan. Since we visit each node and don't perform graph
+	// surgery here, we can just start with a fresh set of check results
+	checkReport := &checks.ReportedChecks{}
+	ctx = checks.ContextWithCheckReporting(ctx, checkReport)
+	ctx = checks.ContextWithSeverity(ctx, func(addr addrs.Checkable) tfdiags.Severity {
+		if plan.Destroying && addr.CheckableKind() == addrs.CheckableOutputValue {
+			// The current runtime skips evaluating these all in the first place.
+			// However, going from a NOP to a Warning in this edge case is probably fine?
+			return tfdiags.Warning
+		}
+		return tfdiags.Error
+	})
 	ctx = grapheval.ContextWithRequestTracker(ctx, grapheval.NewRequestTracker())
 
 	glue := &evalGlue{
@@ -65,6 +79,11 @@ func ApplyPlannedChanges(ctx context.Context, plan *plans.Plan, configInst *eval
 	// referring to resource instance objects that no longer exist.
 	newState, moreDiags := execOps.Finish(ctx, !plan.Destroying)
 	diags = diags.Append(moreDiags)
+
+	// NOTE: The current runtime has a few scenarios where it copies
+	// the checks from the plan (refresh-only), but that should not
+	// be necessary due to how we structured the this runtime.
+	newState.CheckResults = states.NewCheckResults(checkReport.State())
 
 	return newState, diags
 }

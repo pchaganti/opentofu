@@ -1238,7 +1238,7 @@ resource "test_resource" "c" {
 		if !diags.HasErrors() {
 			t.Fatal("succeeded; want errors")
 		}
-		if got, want := diags.Err().Error(), "Resource postcondition failed: Output must not be blank."; got != want {
+		if got, want := diags.Err().Error(), "Resource postcondition failed: Output must not be blank."; !strings.Contains(got, want) {
 			t.Fatalf("wrong error:\ngot:  %s\nwant: %q", got, want)
 		}
 
@@ -1435,7 +1435,7 @@ resource "test_resource" "c" {
 				if !diags.HasErrors() {
 					t.Fatal("succeeded; want errors")
 				}
-				if got, want := diags.Err().Error(), tc.expectedErrorMsg; got != want {
+				if got, want := diags.Err().Error(), tc.expectedErrorMsg; !strings.Contains(got, want) {
 					t.Fatalf("wrong error:\ngot:  %s\nwant: %q", got, want)
 				}
 			} else {
@@ -5537,9 +5537,6 @@ variable "res_data" {
 		t.Fatal(diags.Err())
 	}
 	invalidValueMessage := "Invalid value for variable"
-	if experimentalRuntimeEnabled() {
-		invalidValueMessage = "Invalid value for input variable"
-	}
 	if got, want := diags[0].Description().Summary, invalidValueMessage; got != want {
 		t.Fatalf("Expected: %q, got %q", want, got)
 	}

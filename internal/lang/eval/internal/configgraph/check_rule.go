@@ -14,6 +14,7 @@ import (
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/convert"
 
+	"github.com/opentofu/opentofu/internal/addrs"
 	"github.com/opentofu/opentofu/internal/checks"
 	"github.com/opentofu/opentofu/internal/lang/exprs"
 	"github.com/opentofu/opentofu/internal/lang/marks"
@@ -74,12 +75,6 @@ func (r *CheckRule) Check(ctx context.Context) (checks.Status, cty.ValueMarks, t
 	if err == nil && rawResult.IsNull() {
 		err = fmt.Errorf("value must not be null")
 	}
-	if _, sensitive := resultMarks[marks.Sensitive]; err == nil && sensitive {
-		err = fmt.Errorf("must not be derived from a sensitive value")
-		// TODO: Also annotate the diagnostic with the "caused by sensitive"
-		// annotation, so that the diagnostic renderer can describe where
-		// the sensitive values might have come from.
-	}
 	if err != nil {
 		diags = diags.Append(&hcl.Diagnostic{
 			Severity: hcl.DiagError,
@@ -104,15 +99,26 @@ func (r *CheckRule) ErrorMessage(ctx context.Context) (string, tfdiags.Diagnosti
 	if diags.HasErrors() {
 		return "", diags
 	}
+	errMsg := ""
 	rawResult, err := convert.Convert(rawResult, cty.String)
 	if err == nil && rawResult.IsNull() {
 		err = fmt.Errorf("value must not be null")
 	}
 	if err == nil && rawResult.HasMark(marks.Sensitive) {
-		err = fmt.Errorf("must not be derived from a sensitive value")
 		// TODO: Also annotate the diagnostic with the "caused by sensitive"
 		// annotation, so that the diagnostic renderer can describe where
 		// the sensitive values might have come from.
+		diags = diags.Append(&hcl.Diagnostic{
+			Severity: hcl.DiagWarning,
+			Summary:  "Error message refers to sensitive values",
+			Detail: `The error expression used to explain this condition refers to sensitive values, so OpenTofu will not display the resulting message.
+
+You can correct this by removing references to sensitive values, or by carefully using the nonsensitive() function if the expression will not reveal the sensitive data.`,
+			Subject: r.ErrorMessageValuer.ValueSourceRange().ToHCL().Ptr(),
+			//Expression:  expr,
+			//EvalContext: hclCtx,
+		})
+		errMsg = "This check failed, but has an invalid error message as described in the other accompanying messages."
 	}
 	if err == nil && !rawResult.IsKnown() {
 		err = fmt.Errorf("derived from value that is not yet known")
@@ -127,7 +133,9 @@ func (r *CheckRule) ErrorMessage(ctx context.Context) (string, tfdiags.Diagnosti
 			Detail:   fmt.Sprintf("Invalid result for error message expression: %s.", tfdiags.FormatError(err)),
 			Subject:  r.ErrorMessageValuer.ValueSourceRange().ToHCL().Ptr(),
 		})
-		return "", diags
+	}
+	if errMsg != "" {
+		return errMsg, diags
 	}
 	// TODO: Handle "deprecated" marks, adding any deprecation-related
 	// diagnostics into diags.
@@ -176,13 +184,51 @@ func CheckAllRules(ctx context.Context, rules iter.Seq[*CheckRule], handleResult
 		status, moreMarks, moreDiags := rule.Check(ctx)
 		maps.Copy(marks, moreMarks)
 		diags = diags.Append(moreDiags)
-		var errMsg string // empty unless StatusFail
-		if status == checks.StatusFail {
-			errMsg, moreDiags = rule.ErrorMessage(ctx)
-			diags = diags.Append(moreDiags)
-		}
+		// Always evaluate error message for validation purposes
+		errMsg, moreDiags := rule.ErrorMessage(ctx)
+		diags = diags.Append(moreDiags)
 		moreDiags = handleResult(rule.DeclSourceRange, status, errMsg)
 		diags = diags.Append(moreDiags)
 	}
 	return marks, diags
+}
+
+func CheckAllRulesDefault(ctx context.Context, addr addrs.Checkable, checkType addrs.CheckRuleType, rules iter.Seq[*CheckRule], rng *tfdiags.SourceRange) (cty.ValueMarks, tfdiags.Diagnostics) {
+	var errType string
+	switch checkType {
+	case addrs.ResourcePrecondition, addrs.OutputPrecondition:
+		errType = "precondition"
+	case addrs.ResourcePostcondition:
+		errType = "postcondition"
+	default:
+		errType = "condition"
+	}
+	return CheckAllRules(ctx,
+		rules,
+		func(ruleDeclRange tfdiags.SourceRange, status checks.Status, errMsg string) tfdiags.Diagnostics {
+			checks.ReportCheckInContext(ctx, addr, checkType, status, errMsg)
+			var diags tfdiags.Diagnostics
+			if status == checks.StatusFail {
+				diags = diags.Append(&hcl.Diagnostic{
+					Severity: checks.SeverityFromContext(ctx, addr).ToHCL(),
+					Summary:  checkType.Description() + " failed",
+					Detail:   fmt.Sprintf("%s\n\nThis problem was reported by the %s at %s.", errMsg, errType, ruleDeclRange.StartString()),
+					Subject:  MaybeHCLSourceRange(rng),
+				})
+			}
+			return diags
+		},
+	)
+}
+
+// MarksFromAllRules is a best-effort attempt to determine all applicable marks
+// within the given rules
+func MarksFromAllRules(ctx context.Context, rules iter.Seq[*CheckRule]) cty.ValueMarks {
+	marks, _ := CheckAllRules(ctx,
+		rules,
+		func(ruleDeclRange tfdiags.SourceRange, status checks.Status, errMsg string) tfdiags.Diagnostics {
+			return nil
+		},
+	)
+	return marks
 }
